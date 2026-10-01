@@ -151,6 +151,22 @@ select:disabled { background: #f8f9fc; }
 .quota-values > div { padding: 13px; border-radius: 10px; background: #f5f7fc; }
 .quota-values span { display: block; color: #7b8ba3; font-size: 10px; }
 .quota-values strong { display: block; margin-top: 6px; color: #253a62; font-size: 20px; }
+.usage-section { margin-top: 30px; }
+.usage-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+.usage-tabs { display: inline-flex; gap: 3px; padding: 4px; background: #f0f3f9; border-radius: 10px; }
+.usage-tabs button { border: 0; border-radius: 7px; background: transparent; color: #71809a; padding: 8px 13px; font-size: 11px; font-weight: 700; }
+.usage-tabs button.active { background: #fff; color: #315fdb; box-shadow: 0 2px 7px #263d6618; }
+.usage-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 24px 0; }
+.usage-summary > div { padding: 14px 16px; background: #f7f9fd; border: 1px solid #edf0f6; border-radius: 11px; }
+.usage-summary span { display: block; color: #8795aa; font-size: 11px; }
+.usage-summary strong { display: block; margin-top: 8px; font-size: 22px; color: #243b66; }
+.usage-chart { display: flex; align-items: stretch; gap: 8px; height: 230px; padding: 7px 2px 0; border-bottom: 1px solid #dfe5ef; }
+.usage-bar-item { min-width: 0; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: end; gap: 10px; }
+.usage-bar-track { width: 100%; flex: 1; display: flex; align-items: end; justify-content: center; background: linear-gradient(to top, #edf1f7 1px, transparent 1px) 0 0 / 100% 25%; }
+.usage-bar { width: min(100%, 34px); min-height: 0; border-radius: 5px 5px 0 0; background: linear-gradient(180deg, #7499f4, #315fdb); transition: height .2s ease; }
+.usage-bar-item:last-child .usage-bar { background: linear-gradient(180deg, #67caa9, #279d7b); }
+.usage-bar-item > span { min-height: 15px; color: #8794a8; font-size: 10px; white-space: nowrap; }
+.usage-note { margin-top: 17px !important; font-size: 11px !important; }
 .panel-title-row { display: flex; justify-content: space-between; align-items: start; gap: 14px; margin-bottom: 22px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 12px; }
 .field-full { grid-column: 1 / -1; }
@@ -247,6 +263,12 @@ textarea { min-height: 150px; padding: 16px; resize: vertical; font: 12px/1.7 ui
   .panel { padding: 20px; }
   .button-row .button { flex: 1 1 auto; }
   .env-grid { grid-template-columns: 1fr; }
+  .usage-summary { gap: 6px; }
+  .usage-summary > div { padding: 10px; }
+  .usage-summary strong { font-size: 16px; }
+  .usage-chart { gap: 3px; height: 180px; overflow-x: auto; }
+  .usage-bar-item { min-width: 21px; }
+  .usage-bar-item > span { font-size: 8px; writing-mode: vertical-rl; max-height: 38px; }
   .mapping-labels { display: none; }
   .model-row { grid-template-columns: 1fr 1fr; }
   .model-row .button { grid-column: 1 / -1; justify-self: start; }

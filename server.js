@@ -2,7 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { authenticate, checkQuota, createTranslator, day, digest, id, randomKey, toResponses } from './lib.js';
+import { authenticate, checkQuota, createTranslator, day, digest, id, randomKey, toResponses, usageSeries } from './lib.js';
 import { ChatGPTAuth } from './oauth.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -37,9 +37,21 @@ const reasoningCache = new Map();
 if (!fs.existsSync(adminFile)) fs.writeFileSync(adminFile, randomKey('admin'), { mode: 0o600 });
 const adminToken = fs.readFileSync(adminFile, 'utf8').trim();
 let state = fs.existsSync(stateFile) ? JSON.parse(fs.readFileSync(stateFile, 'utf8')) : {
-  models: { 'codex-sol': 'gpt-6.1-sol' }, keys: [], log: []
+  models: { 'codex-sol': 'gpt-6.1-sol' }, keys: [], log: [], usageDaily: {}
 };
+if (!state.usageDaily) {
+  const today = day();
+  const keys = state.keys.filter(key => key.day === today);
+  state.usageDaily = { [today]: { requests: keys.reduce((sum, key) => sum + key.requests, 0), inputTokens: 0, outputTokens: 0, legacyTokens: keys.reduce((sum, key) => sum + key.tokens, 0) } };
+}
 for (const key of state.keys) key.active = 0;
+function usageBucket(date = day()) {
+  const bucket = state.usageDaily[date] ||= { requests: 0, inputTokens: 0, outputTokens: 0 };
+  const cutoff = new Date(); cutoff.setUTCDate(cutoff.getUTCDate() - 400);
+  const oldest = cutoff.toISOString().slice(0, 10);
+  for (const key of Object.keys(state.usageDaily)) if (key < oldest) delete state.usageDaily[key];
+  return bucket;
+}
 let savePending = Promise.resolve();
 function save() {
   const snapshot = JSON.stringify(state, (key, value) => key === 'active' ? undefined : value, 2);
@@ -101,7 +113,8 @@ async function handleAdmin(req, res, url) {
   const route = url.pathname;
   if (req.method === 'GET' && route === '/admin/api/status') return json(res, 200, {
     baseUrl: `http://${host}:${port}`, upstreamConfigured: upstreamConfigured(), authMode: process.env.OPENAI_API_KEY ? 'openai-api-key' : 'chatgpt-plan', chatgpt: chatgpt.status(),
-    models: state.models, keys: state.keys.map(safeKey), log: state.log
+    models: state.models, keys: state.keys.map(safeKey), log: state.log,
+    usage: { day: usageSeries(state.usageDaily, 'day'), week: usageSeries(state.usageDaily, 'week'), month: usageSeries(state.usageDaily, 'month') }
   });
   if (req.method === 'POST' && route === '/admin/api/chatgpt/start') {
     const body = await readJson(req);
@@ -181,7 +194,7 @@ async function runInference(req, res, body, key) {
   try { payload = toResponses(body, model, { oauth, reasoningByCall: perKeyReasoning }); }
   catch (e) { return error(res, e.status || 400, e.message); }
   const requestId = id();
-  key.active++; key.requests++;
+  key.active++; key.requests++; usageBucket().requests++;
   await save();
   const controller = new AbortController();
   res.on('close', () => { if (!res.writableEnded) controller.abort(); });
@@ -214,6 +227,9 @@ async function runInference(req, res, body, key) {
     for (const block of result.content) if (block.type === 'tool_use' && translator.reasoning.length) reasoningCache.set(`${key.id}:${block.id}`, { items: translator.reasoning, expiresAt: Date.now() + 30 * 60_000 });
     if (reasoningCache.size > 1000) for (const [cacheKey, value] of reasoningCache) if (value.expiresAt < Date.now()) reasoningCache.delete(cacheKey);
     key.tokens += result.usage.input_tokens + result.usage.output_tokens;
+    const bucket = usageBucket();
+    bucket.inputTokens += result.usage.input_tokens;
+    bucket.outputTokens += result.usage.output_tokens;
     log(key, alias, 200, result.usage); await save();
     if (body.stream) res.end(); else json(res, 200, result);
   } catch (e) {

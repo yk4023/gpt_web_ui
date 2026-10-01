@@ -1,6 +1,33 @@
 import crypto from 'node:crypto';
 
 export const day = () => new Intl.DateTimeFormat('en-CA', { timeZone: process.env.GATEWAY_TIMEZONE || 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+export function usageSeries(daily, period, today = day()) {
+  const date = new Date(`${today}T00:00:00Z`);
+  if (period === 'week') date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+  if (period === 'month') date.setUTCDate(1);
+  const count = period === 'day' ? 14 : 12;
+  const points = [];
+  for (let offset = count - 1; offset >= 0; offset--) {
+    const start = new Date(date);
+    if (period === 'month') start.setUTCMonth(start.getUTCMonth() - offset);
+    else start.setUTCDate(start.getUTCDate() - offset * (period === 'week' ? 7 : 1));
+    const end = new Date(start);
+    if (period === 'month') end.setUTCMonth(end.getUTCMonth() + 1);
+    else end.setUTCDate(end.getUTCDate() + (period === 'week' ? 7 : 1));
+    const startKey = start.toISOString().slice(0, 10), endKey = end.toISOString().slice(0, 10);
+    const point = { date: startKey, requests: 0, inputTokens: 0, outputTokens: 0, legacyTokens: 0 };
+    for (const [key, value] of Object.entries(daily)) {
+      if (key >= startKey && key < endKey) {
+        point.requests += value.requests || 0;
+        point.inputTokens += value.inputTokens || 0;
+        point.outputTokens += value.outputTokens || 0;
+        point.legacyTokens += value.legacyTokens || 0;
+      }
+    }
+    points.push(point);
+  }
+  return points;
+}
 export const randomKey = (prefix) => `${prefix}_${crypto.randomBytes(32).toString('base64url')}`;
 export const digest = (value) => crypto.createHash('sha256').update(value).digest('hex');
 export const id = () => crypto.randomUUID();

@@ -57,6 +57,8 @@ claude
 
 管理页按所选网关密钥显示今日剩余请求数与 Token 数，它们是**网关自己设置的限制**，并不是 ChatGPT 或 Codex 账号真实剩余额度。当前授权没有余额查询接口，页面提供 [ChatGPT 官方用量入口](https://chatgpt.com/settings/usage)。上游会独立执行自己的额度与权限规则。由于 Token 数在请求结束后统计，边界处可能多放行一次请求；对严格预算管理不能只依赖这个计数器。
 
+“使用趋势”提供近 14 日、12 周、12 月的图表，可在请求数和 Token 消耗之间切换。它使用本地持久化的每日汇总，按网关时区划分日期；从旧版本升级时会接续当天已有总数，但无法重建之前已清理的历史记录。这些图表不代表 ChatGPT 账号全部应用的官方用量。
+
 需要通过受信任的本机代理连接上游时，可以把 [`config/network.example.json`](../config/network.example.json) 复制到 `.data/network.json` 并修改地址，或在启动前设置 `GATEWAY_PROXY_URL`。该选项只接受回环地址，授权、模型查询和推理会使用代理；客户端到本地网关的连接仍走 `127.0.0.1`。代理不能改变 [OpenAI 的服务地区要求](https://developers.openai.com/api/docs/supported-countries)。
 
 `.data/` 保存管理员令牌、OAuth 凭据、网关密钥摘要、用量和本机代理配置，已被 Git 忽略。不要把这个目录、授权回调 URL 或 API Key 上传到仓库，也不要直接把本地监听端口暴露到公网。公开仓库中的配置文件只是示例，不包含实际凭据。

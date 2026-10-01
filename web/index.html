@@ -37,6 +37,7 @@
       <div class="sidebar-caption">工作区</div>
       <nav class="side-nav" aria-label="主导航">
         <a class="nav-link active" href="#overview"><span class="nav-icon" aria-hidden="true">◫</span>概览</a>
+        <a class="nav-link" href="#usage"><span class="nav-icon" aria-hidden="true">▥</span>使用趋势</a>
         <a class="nav-link" href="#connections"><span class="nav-icon" aria-hidden="true">◇</span>上游连接</a>
         <a class="nav-link" href="#access"><span class="nav-icon" aria-hidden="true">⌘</span>API 密钥</a>
         <a class="nav-link" href="#models"><span class="nav-icon" aria-hidden="true">▦</span>模型映射</a>
@@ -59,6 +60,16 @@
           <article class="metric-card"><div class="metric-top"><span>活跃密钥</span><span class="metric-glyph">⌘</span></div><strong id="key-count">0</strong><small>已启用的调用凭据</small></article>
           <article class="metric-card"><div class="metric-top"><span>今日请求</span><span class="metric-glyph">↗</span></div><strong id="request-count">0</strong><small>本地网关统计</small></article>
           <article class="metric-card"><div class="metric-top"><span>今日 Token</span><span class="metric-glyph">▤</span></div><strong id="token-count">0</strong><small>输入与输出合计</small></article>
+        </section>
+
+        <section id="usage" class="section-block usage-section">
+          <div class="section-heading"><div><span class="eyebrow">USAGE HISTORY</span><h2>使用趋势</h2><p>按日、周、月查看本地网关的请求与 Token 消耗。</p></div></div>
+          <article class="panel usage-panel">
+            <div class="usage-toolbar"><div class="usage-tabs" role="group" aria-label="统计周期"><button id="usage-day" class="active" type="button">每日</button><button id="usage-week" type="button">每周</button><button id="usage-month" type="button">每月</button></div><div class="usage-tabs" role="group" aria-label="统计指标"><button id="usage-requests" class="active" type="button">请求数</button><button id="usage-tokens" type="button">Token</button></div></div>
+            <div class="usage-summary"><div><span>当前周期</span><strong id="usage-current">0</strong></div><div><span>图表范围合计</span><strong id="usage-total">0</strong></div><div><span>最高单周期</span><strong id="usage-peak">0</strong></div></div>
+            <div id="usage-chart" class="usage-chart" role="img" aria-label="本地网关使用趋势图"></div>
+            <p class="usage-note">数据仅统计经过本地网关的调用，不是 ChatGPT 账号的官方用量或剩余额度。历史汇总从本功能启用后持续保存；升级当天会保留已有总数。</p>
+          </article>
         </section>
 
         <section id="connections" class="section-block">

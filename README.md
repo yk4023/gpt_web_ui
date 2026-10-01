@@ -9,6 +9,7 @@
 - **它不读取、控制或复用 Codex 桌面窗口中的对话与登录态。** Codex 桌面窗口没有公开的 Anthropic Messages 服务器接口。本项目通过 OpenAI 官方 Responses API 完成推理。
 - 可在管理页完成独立的 **Sign in with ChatGPT** 授权。授权成功且账号符合条件时，本地应用可使用其 ChatGPT 方案。也可在启动前设置独立的 `OPENAI_API_KEY`；这时按 OpenAI API 计费，并优先使用该密钥。
 - 管理页会计算每枚网关密钥的今日剩余请求和 Token；这只是**网关自行设置的用量限制**。当前授权没有可读取 ChatGPT/Codex 账号真实剩余额度的接口，页面提供 [ChatGPT 官方用量入口](https://chatgpt.com/settings/usage)。每日 token 限额在响应完成后累计，边界处可能多消耗一次请求。
+- “使用趋势”图表可切换每日（近 14 日）、每周（近 12 周）、每月（近 12 月），分别查看请求数或输入与输出 Token 合计。历史汇总保存在本机 `.data/state.json`，保留约 400 天；从旧版本升级时只能继承当天密钥累计总数，无法还原此前被清理的请求记录。统计按 `GATEWAY_TIMEZONE`（默认 `Asia/Shanghai`）划分日期。
 - Claude Code 官方文档允许配置 Anthropic Messages 网关，但不保证通过网关使用非 Claude 模型。这个转换器覆盖常用文本、图片输入、工具调用与流式事件；Claude 专有能力未全部实现。请先用小任务验证自己的 Claude Code 版本。
 
 ## 运行环境

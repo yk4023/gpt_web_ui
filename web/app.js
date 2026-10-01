@@ -4,6 +4,8 @@ let lastKey = '';
 let current = null;
 let modelDirty = false;
 let templateFormat = 'json';
+let usagePeriod = 'day';
+let usageMetric = 'requests';
 let toastTimer;
 
 const show = (id, value) => $(id).classList.toggle('hidden', !value);
@@ -113,6 +115,32 @@ function updateQuotaValues() {
   const remaining = (limit, used) => limit ? Math.max(0, limit - used).toLocaleString() : '不限';
   $('quota-requests').textContent = key ? remaining(key.maxRequests, key.requests) : '—';
   $('quota-tokens').textContent = key ? remaining(key.maxTokens, key.tokens) : '—';
+}
+function renderUsage(data) {
+  const points = data.usage?.[usagePeriod] || [];
+  const value = point => usageMetric === 'requests' ? point.requests : point.inputTokens + point.outputTokens + point.legacyTokens;
+  const values = points.map(value);
+  const max = Math.max(1, ...values);
+  const format = number => number.toLocaleString('zh-CN');
+  $('usage-current').textContent = format(values.at(-1) || 0);
+  $('usage-total').textContent = format(values.reduce((sum, item) => sum + item, 0));
+  $('usage-peak').textContent = format(Math.max(0, ...values));
+  for (const period of ['day', 'week', 'month']) $('usage-' + period).classList.toggle('active', usagePeriod === period);
+  for (const metric of ['requests', 'tokens']) $('usage-' + metric).classList.toggle('active', usageMetric === metric);
+  const chart = $('usage-chart'); chart.replaceChildren();
+  const periodName = { day: '日', week: '周', month: '月' }[usagePeriod];
+  const metricName = usageMetric === 'requests' ? '请求' : 'Token';
+  chart.setAttribute('aria-label', `本地网关按${periodName}统计${metricName}；当前周期 ${values.at(-1) || 0}，图表范围合计 ${values.reduce((sum, item) => sum + item, 0)}`);
+  for (const [index, point] of points.entries()) {
+    const item = document.createElement('div'); item.className = 'usage-bar-item';
+    const label = usagePeriod === 'month' ? point.date.slice(0, 7) : point.date.slice(5);
+    const track = document.createElement('div'); track.className = 'usage-bar-track';
+    const bar = document.createElement('div'); bar.className = 'usage-bar';
+    bar.style.height = `${Math.max(values[index] ? 4 : 0, values[index] / max * 100)}%`;
+    const caption = document.createElement('span'); caption.textContent = label;
+    item.title = `${point.date} · ${format(values[index])} ${metricName}`;
+    track.append(bar); item.append(track, caption); chart.append(item);
+  }
 }
 function renderModelSelectors(models) {
   const aliases = Object.keys(models);
@@ -230,6 +258,7 @@ function render(data) {
   $('last-updated').textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`;
   renderKeys(data.keys);
   renderQuota(data);
+  renderUsage(data);
   renderLogs(data.log);
 }
 async function refresh() { render(await api('/admin/api/status')); }
@@ -248,6 +277,8 @@ $('copy-base').addEventListener('click', () => copy(current?.baseUrl || '', 'Bas
 $('copy-command').addEventListener('click', () => copy($('cli-command').textContent, '接入配置已复制'));
 $('copy-key').addEventListener('click', () => copy(lastKey, 'API Key 已复制'));
 $('quota-key-select').addEventListener('change', updateQuotaValues);
+for (const period of ['day', 'week', 'month']) $('usage-' + period).addEventListener('click', () => { usagePeriod = period; if (current) renderUsage(current); });
+for (const metric of ['requests', 'tokens']) $('usage-' + metric).addEventListener('click', () => { usageMetric = metric; if (current) renderUsage(current); });
 $('add-model-row').addEventListener('click', () => { modelRow(); modelDirty = true; });
 for (const id of ['env-key', 'env-context-tokens', 'env-main-model', 'env-haiku-model', 'env-sonnet-model', 'env-opus-model', 'env-subagent-model']) {
   $(id).addEventListener('input', updateTemplate);

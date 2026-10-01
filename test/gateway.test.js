@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
-import { authenticate, checkQuota, createTranslator, digest, toResponses } from '../lib.js';
+import { authenticate, checkQuota, createTranslator, digest, toResponses, usageSeries } from '../lib.js';
 import { ChatGPTAuth } from '../oauth.js';
 
 test('Anthropic tool messages convert to Responses calls and results', () => {
@@ -97,6 +97,22 @@ test('quota uses the current day and rejects revoked keys', () => {
   assert.equal(authenticate({ keys: [key] }, token), null);
 });
 
+test('usage history groups days across week and month boundaries', () => {
+  const daily = {
+    '2026-09-30': { requests: 2, inputTokens: 10, outputTokens: 3 },
+    '2026-10-01': { requests: 1, inputTokens: 5, outputTokens: 2 },
+    '2026-10-05': { requests: 4, inputTokens: 12, outputTokens: 8 }
+  };
+  const days = usageSeries(daily, 'day', '2026-10-05');
+  assert.equal(days.at(-1).requests, 4);
+  const weeks = usageSeries(daily, 'week', '2026-10-05');
+  assert.equal(weeks.at(-1).date, '2026-10-05');
+  assert.equal(weeks.at(-2).requests, 3);
+  const months = usageSeries(daily, 'month', '2026-10-05');
+  assert.equal(months.at(-1).requests, 5);
+  assert.equal(months.at(-2).requests, 2);
+});
+
 test('local server creates a key, forwards a request, and records usage', async t => {
   const mock = http.createServer(async (req, res) => {
     if (req.url !== '/v1/responses') { res.writeHead(404); return res.end(); }
@@ -148,5 +164,13 @@ test('local server creates a key, forwards a request, and records usage', async 
   const limited = await message();
   assert.equal(limited.status, 429);
   const status = await fetch(`${base}/admin/api/status`, { headers: { 'X-Admin-Token': adminToken } });
-  assert.equal((await status.json()).keys[0].tokens, 18);
+  const data = await status.json();
+  assert.equal(data.keys[0].tokens, 18);
+  assert.equal(data.usage.day.at(-1).requests, 2);
+  assert.equal(data.usage.day.at(-1).inputTokens, 14);
+  assert.equal(data.usage.day.at(-1).outputTokens, 4);
+  assert.equal(data.usage.week.at(-1).requests, 2);
+  assert.equal(data.usage.month.at(-1).requests, 2);
+  const saved = JSON.parse(fs.readFileSync(path.join(tmp, 'state.json'), 'utf8'));
+  assert.equal(saved.usageDaily[data.usage.day.at(-1).date].requests, 2);
 });
