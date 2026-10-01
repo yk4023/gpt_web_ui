@@ -38,9 +38,9 @@ Get-Content .data/admin-token
 接下来依次做四件事：
 
 1. **连接上游。** 点击“使用 ChatGPT 登录”，在 OpenAI 页面完成授权；如果使用自己的 API Key，则在启动网关前设置 `$env:OPENAI_API_KEY = '<你的 Key>'`。
-2. **确认模型。** 点击“查询可用模型”，把模型映射右侧改为该账号实际可用的模型 ID。初始映射只是示例，不能据此判断账号有权限。
+2. **确认模型。** 点击“查询可用模型”，在模型映射中按需添加多行客户端别名与上游模型 ID 并保存。初始映射只是示例，不能据此判断账号有权限。
 3. **创建调用密钥。** 为 Claude Code 建一个独立的 `cg_...` 密钥，设置每日请求、Token 和并发限制。完整密钥只显示一次。
-4. **配置客户端。** 在管理页复制“接入 Claude Code”的 PowerShell 配置，在同一个终端启动 `claude`。
+4. **配置客户端。** 在“接入 Claude Code”选择主模型、Haiku/Sonnet/Opus 默认模型和子代理模型，填入网关密钥。可以复制 `env JSON` 到 Claude Code 的 `settings.json`，也可以切换为 PowerShell 格式，在同一个终端启动 `claude`。
 
 手动配置时，最核心的是以下几项：
 
@@ -51,11 +51,11 @@ $env:ANTHROPIC_MODEL = 'codex-sol'
 claude
 ```
 
-管理页还会生成 Haiku、Sonnet、Opus 默认模型和子代理模型的配置，让 Claude Code 尽量使用同一个网关别名。完整示例见 [README](../README.md)。
+管理页会生成包含 `ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_BASE_URL`、主模型、Haiku/Sonnet/Opus 默认模型、子代理模型和 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` 的完整 `env` JSON。各模型可以分别映射到不同上游。上下文数值可编辑，但不能扩大上游模型的实际容量；完整示例见 [README](../README.md)。
 
 ## 额度、代理和安全
 
-管理页显示的请求数与 Token 限额，是**网关自己设置的限制**，并不是 ChatGPT 或 Codex 账号真实剩余额度。上游会独立执行自己的额度与权限规则。由于 Token 数在请求结束后统计，边界处可能多放行一次请求；对严格预算管理不能只依赖这个计数器。
+管理页按所选网关密钥显示今日剩余请求数与 Token 数，它们是**网关自己设置的限制**，并不是 ChatGPT 或 Codex 账号真实剩余额度。当前授权没有余额查询接口，页面提供 [ChatGPT 官方用量入口](https://chatgpt.com/settings/usage)。上游会独立执行自己的额度与权限规则。由于 Token 数在请求结束后统计，边界处可能多放行一次请求；对严格预算管理不能只依赖这个计数器。
 
 需要通过受信任的本机代理连接上游时，可以把 [`config/network.example.json`](../config/network.example.json) 复制到 `.data/network.json` 并修改地址，或在启动前设置 `GATEWAY_PROXY_URL`。该选项只接受回环地址，授权、模型查询和推理会使用代理；客户端到本地网关的连接仍走 `127.0.0.1`。代理不能改变 [OpenAI 的服务地区要求](https://developers.openai.com/api/docs/supported-countries)。
 

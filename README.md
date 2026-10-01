@@ -8,7 +8,7 @@
 
 - **它不读取、控制或复用 Codex 桌面窗口中的对话与登录态。** Codex 桌面窗口没有公开的 Anthropic Messages 服务器接口。本项目通过 OpenAI 官方 Responses API 完成推理。
 - 可在管理页完成独立的 **Sign in with ChatGPT** 授权。授权成功且账号符合条件时，本地应用可使用其 ChatGPT 方案。也可在启动前设置独立的 `OPENAI_API_KEY`；这时按 OpenAI API 计费，并优先使用该密钥。
-- 管理页显示的是**网关自行设置的用量限制**，不是 ChatGPT/Codex 账号的真实剩余额度。真实账号限制由 OpenAI 执行。每日 token 限额在响应完成后累计，边界处可能多消耗一次请求。
+- 管理页会计算每枚网关密钥的今日剩余请求和 Token；这只是**网关自行设置的用量限制**。当前授权没有可读取 ChatGPT/Codex 账号真实剩余额度的接口，页面提供 [ChatGPT 官方用量入口](https://chatgpt.com/settings/usage)。每日 token 限额在响应完成后累计，边界处可能多消耗一次请求。
 - Claude Code 官方文档允许配置 Anthropic Messages 网关，但不保证通过网关使用非 Claude 模型。这个转换器覆盖常用文本、图片输入、工具调用与流式事件；Claude 专有能力未全部实现。请先用小任务验证自己的 Claude Code 版本。
 
 ## 运行环境
@@ -32,9 +32,9 @@ Get-Content '.data/admin-token'
 然后在管理页依次：
 
 1. 点击“使用 ChatGPT 登录”，在 OpenAI 官方页面选择账号并授权使用 ChatGPT 方案。授权完成后返回管理页。也可以跳过此步，改用下面的 API Key 模式。
-2. 点击“查看账号可用模型”，把“模型映射”右侧改为该账号实际可用的模型 ID。默认映射 `codex-sol → gpt-6.1-sol` 只是初始示例，不能保证账号有此模型。
+2. 点击“查询可用模型”，在“模型映射”中添加任意多行客户端别名与上游模型 ID，并保存。默认映射只是初始示例，不能保证账号有此模型。
 3. 创建网关调用密钥，设置每日请求、每日 token 和并发上限。密钥只显示一次。
-4. 复制管理页给出的 Claude Code PowerShell 配置，在同一终端运行 `claude`。
+4. 在“接入 Claude Code”选择主模型、Haiku/Sonnet/Opus 默认模型和子代理模型，填入刚创建的密钥。复制 `env JSON` 到 Claude Code 的 `settings.json`，或切换为 PowerShell 格式并在同一终端运行 `claude`。
 
 API Key 上游模式：在启动网关的终端先设置 `OPENAI_API_KEY`，然后运行 `npm start`。不要把上游密钥填入 Claude Code；Claude Code 只使用网关生成的 `cg_...` 密钥。
 
@@ -50,7 +50,26 @@ New-Item -ItemType Directory -Force .data | Out-Null
 Copy-Item config/network.example.json .data/network.json
 ```
 
-Claude Code 配置示例：
+Claude Code `settings.json` 示例（管理页按所选模型自动生成）：
+
+```json
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "<管理页生成的 cg_... 密钥>",
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8765",
+    "ANTHROPIC_MODEL": "codex-luna",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "codex-luna",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "codex-luna",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "codex-luna",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "codex-luna",
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "983616"
+  }
+}
+```
+
+`codex-luna` 必须先在模型映射中保存；`983616` 是可编辑的客户端配置值，不能扩大上游模型的实际上下文容量。如果 `settings.json` 已有其他配置，请将生成的 `env` 字段合并到现有 JSON 对象中。
+
+也可以选择 PowerShell 格式：
 
 ```powershell
 $env:ANTHROPIC_BASE_URL = 'http://127.0.0.1:8765'

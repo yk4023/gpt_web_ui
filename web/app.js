@@ -3,6 +3,7 @@ let token = sessionStorage.getItem('gateway-admin-token') || '';
 let lastKey = '';
 let current = null;
 let modelDirty = false;
+let templateFormat = 'json';
 let toastTimer;
 
 const show = (id, value) => $(id).classList.toggle('hidden', !value);
@@ -34,8 +35,101 @@ async function copy(text, success) {
   try { await navigator.clipboard.writeText(text); toast(success); }
   catch { toast('复制失败，请手动选中并复制。', true); }
 }
-function command(base, model, key) {
-  return `$env:ANTHROPIC_BASE_URL="${base}"\n$env:ANTHROPIC_AUTH_TOKEN="${key || '<在此填入生成的 API Key>'}"\n$env:ANTHROPIC_MODEL="${model}"\n$env:ANTHROPIC_DEFAULT_HAIKU_MODEL="${model}"\n$env:ANTHROPIC_DEFAULT_SONNET_MODEL="${model}"\n$env:ANTHROPIC_DEFAULT_OPUS_MODEL="${model}"\n$env:CLAUDE_CODE_SUBAGENT_MODEL="${model}"\nclaude`;
+function templateValues() {
+  const model = id => $(id).value || 'codex-luna';
+  const context = $('env-context-tokens').value.trim();
+  return {
+    ANTHROPIC_AUTH_TOKEN: $('env-key').value.trim() || '<粘贴网关 API Key>',
+    ANTHROPIC_BASE_URL: current?.baseUrl || 'http://127.0.0.1:8765',
+    ANTHROPIC_MODEL: model('env-main-model'),
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: model('env-haiku-model'),
+    ANTHROPIC_DEFAULT_SONNET_MODEL: model('env-sonnet-model'),
+    ANTHROPIC_DEFAULT_OPUS_MODEL: model('env-opus-model'),
+    CLAUDE_CODE_SUBAGENT_MODEL: model('env-subagent-model'),
+    CLAUDE_CODE_MAX_CONTEXT_TOKENS: /^\d+$/.test(context) && Number(context) > 0 ? context : '983616'
+  };
+}
+function updateTemplate() {
+  if (!current) return;
+  const values = templateValues();
+  $('cli-command').textContent = templateFormat === 'json'
+    ? JSON.stringify({ env: values }, null, 2)
+    : `${Object.entries(values).map(([name, value]) => `$env:${name}='${value.replaceAll("'", "''")}'`).join('\n')}\nclaude`;
+  $('template-title').textContent = templateFormat === 'json' ? 'settings.json · Claude Code' : 'PowerShell · Claude Code';
+  $('format-json').classList.toggle('active', templateFormat === 'json');
+  $('format-ps').classList.toggle('active', templateFormat === 'ps');
+}
+function modelRow(alias = '', upstream = '') {
+  const row = document.createElement('div'); row.className = 'model-row';
+  const name = document.createElement('input'); name.className = 'model-alias'; name.placeholder = '例如 codex-luna'; name.setAttribute('aria-label', '客户端模型别名'); name.value = alias;
+  const target = document.createElement('input'); target.className = 'model-target'; target.placeholder = '当前账号可用的模型 ID'; target.setAttribute('aria-label', '上游模型 ID'); target.setAttribute('list', 'upstream-model-options'); target.value = upstream;
+  const remove = document.createElement('button'); remove.className = 'button button-secondary button-small'; remove.type = 'button'; remove.textContent = '移除'; remove.setAttribute('aria-label', `移除映射 ${alias || '空行'}`);
+  for (const input of [name, target]) input.addEventListener('input', () => { modelDirty = true; });
+  remove.addEventListener('click', () => { row.remove(); modelDirty = true; });
+  row.append(name, target, remove);
+  $('model-rows').append(row);
+}
+function renderModelRows(models) {
+  $('model-rows').replaceChildren();
+  for (const [alias, upstream] of Object.entries(models)) modelRow(alias, upstream);
+  if (!Object.keys(models).length) modelRow();
+}
+function collectModels() {
+  const models = {};
+  for (const row of $('model-rows').children) {
+    const alias = row.querySelector('.model-alias').value.trim();
+    const target = row.querySelector('.model-target').value.trim();
+    if (!alias && !target) continue;
+    if (!alias || !target) throw Error('请完整填写每一条模型映射');
+    if (Object.hasOwn(models, alias)) throw Error(`模型别名重复：${alias}`);
+    models[alias] = target;
+  }
+  if (!Object.keys(models).length) throw Error('请至少添加一条模型映射');
+  return models;
+}
+function renderQuota(data) {
+  const selected = data.chatgpt.profiles.find(profile => profile.clientId === data.chatgpt.selected);
+  $('account-quota').textContent = '—';
+  $('account-quota-note').textContent = data.authMode === 'openai-api-key'
+    ? 'API Key 用量由 OpenAI 平台管理，本地未获取余额。'
+    : selected ? '当前授权未提供余额查询接口，请查看官方用量页。' : '连接 ChatGPT 账号后，可在官方用量页查看。';
+  show('account-usage-link', data.authMode !== 'openai-api-key');
+  const selector = $('quota-key-select');
+  const previous = selector.value;
+  selector.replaceChildren();
+  const active = data.keys.filter(key => !key.revoked);
+  if (!active.length) {
+    const option = document.createElement('option'); option.value = ''; option.textContent = '暂无有效密钥'; selector.append(option);
+  }
+  for (const key of active) {
+    const option = document.createElement('option'); option.value = key.id; option.textContent = `${key.name} · ${key.prefix}…`; selector.append(option);
+  }
+  selector.disabled = !active.length;
+  if (active.some(key => key.id === previous)) selector.value = previous;
+  updateQuotaValues();
+}
+function updateQuotaValues() {
+  const key = current?.keys.find(item => item.id === $('quota-key-select').value);
+  const remaining = (limit, used) => limit ? Math.max(0, limit - used).toLocaleString() : '不限';
+  $('quota-requests').textContent = key ? remaining(key.maxRequests, key.requests) : '—';
+  $('quota-tokens').textContent = key ? remaining(key.maxTokens, key.tokens) : '—';
+}
+function renderModelSelectors(models) {
+  const aliases = Object.keys(models);
+  const fallback = aliases.includes('codex-luna') ? 'codex-luna' : aliases[0] || '';
+  for (const id of ['env-main-model', 'env-haiku-model', 'env-sonnet-model', 'env-opus-model', 'env-subagent-model']) {
+    const selector = $(id);
+    const previous = selector.value;
+    selector.replaceChildren();
+    for (const alias of aliases) {
+      const option = document.createElement('option'); option.value = alias; option.textContent = alias; selector.append(option);
+    }
+    if (!aliases.length) {
+      const option = document.createElement('option'); option.value = ''; option.textContent = '先添加模型映射'; selector.append(option);
+    }
+    selector.disabled = !aliases.length;
+    selector.value = aliases.includes(previous) ? previous : fallback;
+  }
 }
 function textCell(row, value, className = '') {
   const cell = row.insertCell();
@@ -130,10 +224,12 @@ function render(data) {
   $('request-count').textContent = data.keys.reduce((sum, key) => sum + key.requests, 0).toLocaleString();
   $('token-count').textContent = data.keys.reduce((sum, key) => sum + key.tokens, 0).toLocaleString();
   $('model-count').textContent = `${Object.keys(data.models).length} 个映射`;
-  if (!modelDirty) $('model-map').value = JSON.stringify(data.models, null, 2);
-  $('cli-command').textContent = command(data.baseUrl, Object.keys(data.models)[0] || 'codex-sol', lastKey);
+  if (!modelDirty) renderModelRows(data.models);
+  renderModelSelectors(data.models);
+  updateTemplate();
   $('last-updated').textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`;
   renderKeys(data.keys);
+  renderQuota(data);
   renderLogs(data.log);
 }
 async function refresh() { render(await api('/admin/api/status')); }
@@ -151,7 +247,14 @@ $('refresh-button').addEventListener('click', () => withButton($('refresh-button
 $('copy-base').addEventListener('click', () => copy(current?.baseUrl || '', 'Base URL 已复制'));
 $('copy-command').addEventListener('click', () => copy($('cli-command').textContent, '接入配置已复制'));
 $('copy-key').addEventListener('click', () => copy(lastKey, 'API Key 已复制'));
-$('model-map').addEventListener('input', () => modelDirty = true);
+$('quota-key-select').addEventListener('change', updateQuotaValues);
+$('add-model-row').addEventListener('click', () => { modelRow(); modelDirty = true; });
+for (const id of ['env-key', 'env-context-tokens', 'env-main-model', 'env-haiku-model', 'env-sonnet-model', 'env-opus-model', 'env-subagent-model']) {
+  $(id).addEventListener('input', updateTemplate);
+  $(id).addEventListener('change', updateTemplate);
+}
+$('format-json').addEventListener('click', () => { templateFormat = 'json'; updateTemplate(); });
+$('format-ps').addEventListener('click', () => { templateFormat = 'ps'; updateTemplate(); });
 
 $('create-key').addEventListener('click', () => withButton($('create-key'), async () => {
   const result = await api('/admin/api/keys', 'POST', {
@@ -162,6 +265,7 @@ $('create-key').addEventListener('click', () => withButton($('create-key'), asyn
   });
   lastKey = result.key;
   $('new-key').textContent = lastKey;
+  $('env-key').value = lastKey;
   show('new-key-box', true);
   await refresh();
   $('new-key-box').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -188,16 +292,18 @@ $('discover-models').addEventListener('click', () => withButton($('discover-mode
   const result = await api('/admin/api/upstream/models');
   const container = $('available-models');
   container.replaceChildren();
+  const options = $('upstream-model-options'); options.replaceChildren();
   if (!result.models.length) {
     const empty = document.createElement('span'); empty.className = 'empty-inline'; empty.textContent = '当前账号没有列出可用模型'; container.append(empty);
   }
   for (const model of result.models) {
     const chip = document.createElement('span'); chip.className = 'model-chip'; chip.textContent = `${model.name} · ${model.id}`; container.append(chip);
+    const option = document.createElement('option'); option.value = model.id; options.append(option);
   }
   toast(`已获取 ${result.models.length} 个模型`);
 }));
 $('save-models').addEventListener('click', () => withButton($('save-models'), async () => {
-  await api('/admin/api/models', 'PUT', JSON.parse($('model-map').value));
+  await api('/admin/api/models', 'PUT', collectModels());
   modelDirty = false;
   await refresh(); toast('模型映射已保存');
 }));
