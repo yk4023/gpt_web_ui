@@ -1,6 +1,14 @@
 import crypto from 'node:crypto';
 
 export const day = () => new Intl.DateTimeFormat('en-CA', { timeZone: process.env.GATEWAY_TIMEZONE || 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+export const hour = () => new Intl.DateTimeFormat('en-CA', { timeZone: process.env.GATEWAY_TIMEZONE || 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' }).format(new Date()).replace(', ', ' ');
+export function hourlyUsageSeries(hourly, now = new Date()) {
+  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: process.env.GATEWAY_TIMEZONE || 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' });
+  return Array.from({ length: 24 }, (_, index) => {
+    const date = formatter.format(new Date(now.getTime() - (23 - index) * 3_600_000)).replace(', ', ' ');
+    return { date, requests: 0, inputTokens: 0, outputTokens: 0, legacyTokens: 0, ...hourly[date] };
+  });
+}
 export function usageSeries(daily, period, today = day()) {
   const date = new Date(`${today}T00:00:00Z`);
   if (period === 'week') date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
@@ -59,7 +67,7 @@ function textParts(content) {
   });
 }
 
-export function toResponses(body, model, { oauth = false, reasoningByCall = null } = {}) {
+export function toResponses(body, model, { oauth = false, reasoningByCall = null, reasoningEffort = '' } = {}) {
   const input = [];
   const addedReasoning = new Set();
   const system = typeof body.system === 'string' ? body.system :
@@ -88,6 +96,7 @@ export function toResponses(body, model, { oauth = false, reasoningByCall = null
   }
   const tools = (body.tools || []).filter(t => t.name && t.input_schema).map(t => ({ type: 'function', name: t.name, description: t.description || '', parameters: t.input_schema, strict: false }));
   const result = { model, input, stream: true, store: false, include: ['reasoning.encrypted_content'] };
+  if (reasoningEffort) result.reasoning = { effort: reasoningEffort };
   if (system) result.instructions = system;
   if (tools.length) {
     result.tools = oauth ? [{ type: 'namespace', name: 'claude_code', description: 'Tools executed by the Claude Code client in the local project.', tools }] : tools;

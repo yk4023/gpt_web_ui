@@ -2,7 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { authenticate, checkQuota, createOpenAIStream, createTranslator, day, digest, id, openaiCompletion, openaiToAnthropic, randomKey, toResponses, usageSeries } from './lib.js';
+import { authenticate, checkQuota, createOpenAIStream, createTranslator, day, digest, hour, hourlyUsageSeries, id, openaiCompletion, openaiToAnthropic, randomKey, toResponses, usageSeries } from './lib.js';
 import { ChatGPTAuth } from './oauth.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -10,17 +10,26 @@ const dataDir = process.env.GATEWAY_DATA_DIR || path.join(root, '.data');
 fs.mkdirSync(dataDir, { recursive: true });
 const networkFile = path.join(dataDir, 'network.json');
 const network = fs.existsSync(networkFile) ? JSON.parse(fs.readFileSync(networkFile, 'utf8')) : {};
-const proxyUrl = (process.env.GATEWAY_PROXY_URL || network.proxyUrl || '').trim();
-if (proxyUrl) {
-  const parsed = new URL(proxyUrl);
-  if (!['http:', 'https:'].includes(parsed.protocol) || !['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname)) {
-    throw Error('GATEWAY_PROXY_URL must be a local HTTP or HTTPS proxy URL');
+const environmentProxy = (process.env.GATEWAY_PROXY_URL || '').trim();
+let proxyUrl = '';
+let restoreProxy = null;
+function validateProxyUrl(value) {
+  if (!value) return '';
+  let parsed;
+  try { parsed = new URL(value); } catch { throw Object.assign(new Error('Invalid proxy URL'), { status: 400 }); }
+  if (!['http:', 'https:'].includes(parsed.protocol) || !['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname) || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) {
+    throw Object.assign(new Error('Proxy must be a local HTTP or HTTPS URL without credentials'), { status: 400 });
   }
-  if (typeof http.setGlobalProxyFromEnv !== 'function') {
-    throw Error('Local proxy support requires Node.js 22.21+ or 24.5+');
-  }
-  http.setGlobalProxyFromEnv({ http_proxy: proxyUrl, https_proxy: proxyUrl, no_proxy: 'localhost,127.0.0.1,[::1]' });
+  return parsed.href.replace(/\/$/, '');
 }
+function applyProxy(value) {
+  const next = validateProxyUrl(value);
+  if (next && typeof http.setGlobalProxyFromEnv !== 'function') throw Error('Local proxy support requires Node.js 22.21+ or 24.5+');
+  if (restoreProxy) { restoreProxy(); restoreProxy = null; }
+  if (next) restoreProxy = http.setGlobalProxyFromEnv({ http_proxy: next, https_proxy: next, no_proxy: 'localhost,127.0.0.1,[::1]' });
+  proxyUrl = next;
+}
+applyProxy(environmentProxy || network.proxyUrl || '');
 const stateFile = path.join(dataDir, 'state.json');
 const adminFile = path.join(dataDir, 'admin-token');
 const host = process.env.GATEWAY_HOST || '127.0.0.1';
@@ -33,6 +42,13 @@ const oauth = !process.env.OPENAI_API_KEY;
 const upstreamConfigured = () => !!staticToken || !!chatgpt.data.profiles.find(p => p.clientId === chatgpt.data.selected && p.refreshToken);
 const upstreamUrl = () => oauth && !staticToken ? 'https://api.openai.com/v1' : upstream;
 const reasoningCache = new Map();
+function validModelRoute(route) {
+  if (typeof route === 'string') return /^[a-zA-Z0-9._-]{1,120}$/.test(route);
+  return route && typeof route === 'object' && !Array.isArray(route) &&
+    Object.keys(route).every(key => ['model', 'reasoningEffort'].includes(key)) &&
+    typeof route.model === 'string' && /^[a-zA-Z0-9._-]{1,120}$/.test(route.model) &&
+    ['', 'low', 'medium', 'high', 'xhigh'].includes(route.reasoningEffort || '');
+}
 
 if (!fs.existsSync(adminFile)) fs.writeFileSync(adminFile, randomKey('admin'), { mode: 0o600 });
 const adminToken = fs.readFileSync(adminFile, 'utf8').trim();
@@ -44,12 +60,21 @@ if (!state.usageDaily) {
   const keys = state.keys.filter(key => key.day === today);
   state.usageDaily = { [today]: { requests: keys.reduce((sum, key) => sum + key.requests, 0), inputTokens: 0, outputTokens: 0, legacyTokens: keys.reduce((sum, key) => sum + key.tokens, 0) } };
 }
+state.usageHourly ||= {};
 for (const key of state.keys) key.active = 0;
 function usageBucket(date = day()) {
   const bucket = state.usageDaily[date] ||= { requests: 0, inputTokens: 0, outputTokens: 0 };
   const cutoff = new Date(); cutoff.setUTCDate(cutoff.getUTCDate() - 400);
   const oldest = cutoff.toISOString().slice(0, 10);
   for (const key of Object.keys(state.usageDaily)) if (key < oldest) delete state.usageDaily[key];
+  return bucket;
+}
+function hourlyBucket() {
+  const key = hour();
+  const bucket = state.usageHourly[key] ||= { requests: 0, inputTokens: 0, outputTokens: 0 };
+  if (Object.keys(state.usageHourly).length > 72) {
+    for (const old of Object.keys(state.usageHourly).sort().slice(0, -48)) delete state.usageHourly[old];
+  }
   return bucket;
 }
 let savePending = Promise.resolve();
@@ -113,9 +138,22 @@ async function handleAdmin(req, res, url) {
   const route = url.pathname;
   if (req.method === 'GET' && route === '/admin/api/status') return json(res, 200, {
     baseUrl: `http://${host}:${port}`, upstreamConfigured: upstreamConfigured(), authMode: process.env.OPENAI_API_KEY ? 'openai-api-key' : 'chatgpt-plan', chatgpt: chatgpt.status(),
+    network: { proxyUrl, source: environmentProxy ? 'environment' : 'dashboard' },
     models: state.models, keys: state.keys.map(safeKey), log: state.log,
-    usage: { day: usageSeries(state.usageDaily, 'day'), week: usageSeries(state.usageDaily, 'week'), month: usageSeries(state.usageDaily, 'month') }
+    usage: { hour: hourlyUsageSeries(state.usageHourly), day: usageSeries(state.usageDaily, 'day'), week: usageSeries(state.usageDaily, 'week'), month: usageSeries(state.usageDaily, 'month') }
   });
+  if (req.method === 'PUT' && route === '/admin/api/network') {
+    if (environmentProxy) return error(res, 409, 'GATEWAY_PROXY_URL is set at startup; change it there and restart the gateway');
+    const body = await readJson(req);
+    if (typeof body?.proxyUrl !== 'string' || body.proxyUrl.length > 2048) return error(res, 400, 'Invalid proxy URL');
+    const next = validateProxyUrl(body.proxyUrl.trim());
+    const snapshot = JSON.stringify({ proxyUrl: next }, null, 2);
+    const tmp = `${networkFile}.${process.pid}.tmp`;
+    await fs.promises.writeFile(tmp, snapshot, { mode: 0o600 });
+    await fs.promises.rename(tmp, networkFile);
+    applyProxy(next);
+    return json(res, 200, { proxyUrl, source: 'dashboard' });
+  }
   if (req.method === 'POST' && route === '/admin/api/chatgpt/start') {
     const body = await readJson(req);
     return json(res, 200, { url: await chatgpt.start(body.clientId || null) });
@@ -166,7 +204,7 @@ async function handleAdmin(req, res, url) {
   if (req.method === 'PUT' && route === '/admin/api/models') {
     const body = await readJson(req);
     if (!body || typeof body !== 'object' || Array.isArray(body) || !Object.keys(body).length || Object.keys(body).length > 30 ||
-        Object.entries(body).some(([alias, model]) => !/^[a-zA-Z0-9._-]{1,80}$/.test(alias) || typeof model !== 'string' || !/^[a-zA-Z0-9._-]{1,120}$/.test(model))) return error(res, 400, 'Invalid model map');
+        Object.entries(body).some(([alias, route]) => !/^[a-zA-Z0-9._-]{1,80}$/.test(alias) || !validModelRoute(route))) return error(res, 400, 'Invalid model map');
     state.models = body; await save(); return json(res, 200, state.models);
   }
   error(res, 404, 'Not found');
@@ -183,8 +221,10 @@ async function runInference(req, res, body, key, format = 'anthropic') {
   if (!upstreamToken) return error(res, 503, 'Connect a ChatGPT account or set OPENAI_API_KEY before starting inference');
   if (!body || !Array.isArray(body.messages) || !body.messages.length) return error(res, 400, 'messages must be a nonempty array');
   const alias = body.model;
-  const model = state.models[alias];
-  if (!model) return error(res, 404, `Unknown model: ${alias}`);
+  const route = state.models[alias];
+  if (!route) return error(res, 404, `Unknown model: ${alias}`);
+  const model = typeof route === 'string' ? route : route.model;
+  const reasoningEffort = typeof route === 'string' ? '' : route.reasoningEffort || '';
   const quotaError = checkQuota(key, alias);
   if (quotaError) return error(res, 429, quotaError, 'rate_limit_error');
   let payload;
@@ -195,10 +235,10 @@ async function runInference(req, res, body, key, format = 'anthropic') {
       if (saved && saved.expiresAt > Date.now()) perKeyReasoning.set(block.id, saved.items);
     }
   }
-  try { payload = toResponses(body, model, { oauth, reasoningByCall: perKeyReasoning }); }
+  try { payload = toResponses(body, model, { oauth, reasoningByCall: perKeyReasoning, reasoningEffort }); }
   catch (e) { return error(res, e.status || 400, e.message); }
   const requestId = id();
-  key.active++; key.requests++; usageBucket().requests++;
+  key.active++; key.requests++; usageBucket().requests++; hourlyBucket().requests++;
   await save();
   const controller = new AbortController();
   res.on('close', () => { if (!res.writableEnded) controller.abort(); });
@@ -235,6 +275,9 @@ async function runInference(req, res, body, key, format = 'anthropic') {
     const bucket = usageBucket();
     bucket.inputTokens += result.usage.input_tokens;
     bucket.outputTokens += result.usage.output_tokens;
+    const hourBucket = hourlyBucket();
+    hourBucket.inputTokens += result.usage.input_tokens;
+    hourBucket.outputTokens += result.usage.output_tokens;
     log(key, alias, 200, result.usage); await save();
     if (body.stream) res.end(); else json(res, 200, format === 'openai' ? openaiCompletion(result) : result);
   } catch (e) {

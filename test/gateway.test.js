@@ -24,6 +24,7 @@ test('Anthropic tool messages convert to Responses calls and results', () => {
   assert.equal(oauthResult.tools[0].type, 'namespace');
   assert.equal(oauthResult.input[1].name, 'Read');
   assert.equal(oauthResult.input[1].namespace, 'claude_code');
+  assert.deepEqual(toResponses(body, 'gpt-test', { reasoningEffort: 'high' }).reasoning, { effort: 'high' });
 });
 
 test('OpenAI messages, tool calls, and streaming chunks convert correctly', () => {
@@ -146,6 +147,7 @@ test('local server creates a key, forwards a request, and records usage', async 
     const body = JSON.parse(Buffer.concat(chunks).toString());
     assert.equal(body.model, 'gpt-6.1-sol');
     assert.equal(body.store, false);
+    assert.deepEqual(body.reasoning, { effort: 'high' });
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
     for (const item of [
       { type: 'response.created', response: { id: 'resp_test' } },
@@ -173,9 +175,19 @@ test('local server creates a key, forwards a request, and records usage', async 
   }
   assert.equal(ready, true, 'server started');
   const adminToken = fs.readFileSync(path.join(tmp, 'admin-token'), 'utf8').trim();
+  const networkHeaders = { 'X-Admin-Token': adminToken, 'Content-Type': 'application/json' };
+  const network = proxyUrl => fetch(`${base}/admin/api/network`, { method: 'PUT', headers: networkHeaders, body: JSON.stringify({ proxyUrl }) });
+  assert.equal((await network('http://example.com:7890')).status, 400);
+  assert.equal((await network('http://127.0.0.1:7890')).status, 200);
+  const proxiedStatus = await fetch(`${base}/admin/api/status`, { headers: { 'X-Admin-Token': adminToken } });
+  assert.equal((await proxiedStatus.json()).network.proxyUrl, 'http://127.0.0.1:7890');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(tmp, 'network.json'), 'utf8')).proxyUrl, 'http://127.0.0.1:7890');
+  assert.equal((await network('')).status, 200);
   const keyResponse = await fetch(`${base}/admin/api/keys`, { method: 'POST', headers: { 'X-Admin-Token': adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'test', maxRequests: 2, maxTokens: 100, maxConcurrent: 1 }) });
   assert.equal(keyResponse.status, 201);
   const { key } = await keyResponse.json();
+  const mapped = await fetch(`${base}/admin/api/models`, { method: 'PUT', headers: networkHeaders, body: JSON.stringify({ 'codex-sol': { model: 'gpt-6.1-sol', reasoningEffort: 'high' } }) });
+  assert.equal(mapped.status, 200);
   const message = stream => fetch(`${base}/v1/messages`, { method: 'POST', headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'codex-sol', stream, messages: [{ role: 'user', content: 'hi' }] }) });
   const streamed = await message(true);
   assert.equal(streamed.status, 200);
@@ -193,6 +205,8 @@ test('local server creates a key, forwards a request, and records usage', async 
   const data = await status.json();
   assert.equal(data.keys[0].tokens, 18);
   assert.equal(data.usage.day.at(-1).requests, 2);
+  assert.equal(data.usage.hour.at(-1).requests, 2);
+  assert.equal(data.usage.hour.at(-1).inputTokens, 14);
   assert.equal(data.usage.day.at(-1).inputTokens, 14);
   assert.equal(data.usage.day.at(-1).outputTokens, 4);
   assert.equal(data.usage.week.at(-1).requests, 2);

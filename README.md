@@ -23,7 +23,7 @@ Get-Content '.data/admin-token'
 **3. 连接账号并创建网关密钥。** 在管理页依次操作：
 
 1. 点击“使用 ChatGPT 登录”完成独立授权。
-2. 点击“查询可用模型”，在“模型映射”中设置客户端别名，从下拉列表选择上游模型 ID，然后保存。
+2. 点击“查询可用模型”，在“模型映射”中设置客户端别名、上游模型和可选的思考等级，然后保存。
 3. 创建网关 API Key，设置限额，并立即保存完整的 `cg_...` 密钥；页面只显示一次。
 
 **4. 接入客户端。** 在“客户端接入”中填入网关密钥和模型，复制 Claude Code 或 OpenAI 格式配置。两个接口共用同一套模型映射和网关密钥：
@@ -33,7 +33,7 @@ Get-Content '.data/admin-token'
 | Claude Code / Anthropic Messages | `http://127.0.0.1:8765` | 管理页生成的 `cg_...` |
 | OpenAI Chat Completions | `http://127.0.0.1:8765/v1` | 同一枚 `cg_...` |
 
-模型填写“模型映射”中保存的**客户端别名**，不要填写上游模型 ID。默认映射仅是示例，需按账号实际可用模型调整。
+模型填写“模型映射”中保存的**客户端别名**，不要填写上游模型 ID。默认映射仅是示例，需按账号实际可用模型调整。思考等级按映射发送给上游，具体等级是否受支持取决于所选模型。
 
 ## 可选：使用 OpenAI API Key 或本机代理
 
@@ -44,7 +44,13 @@ $env:OPENAI_API_KEY = '<你的 OpenAI API Key>'
 npm start
 ```
 
-本机需要通过代理访问上游时，可复制 [`config/network.example.json`](config/network.example.json) 到 `.data/network.json` 并修改地址，或在启动前设置 `GATEWAY_PROXY_URL`（环境变量优先）。代理只接受本机 HTTP/HTTPS 地址；授权、模型查询和推理会使用它。代理不会改变 OpenAI 服务地区要求。
+### 上游需要本机代理时
+
+如果当前网络不能直连上游，可先在本机启动你信任的 HTTP/HTTPS 代理，然后在管理页“上游连接 → 上游网络代理”填写本机地址，例如 `http://127.0.0.1:7890`，点击“保存并立即应用”。授权、模型查询和推理请求将使用该代理；客户端到本地网关的连接仍使用 `127.0.0.1:8765`。清空地址并保存即可恢复直连。
+
+也可在启动网关前设置 `GATEWAY_PROXY_URL`；它优先于页面设置，此时需在环境变量中修改并重启。项目还提供 [`config/network.example.json`](config/network.example.json) 作为手动配置示例，保存到 `.data/network.json` 后重启生效。只接受本机 HTTP/HTTPS 代理地址。
+
+**地区限制说明：** 代理只会改变请求的网络出口，不能保证通过 OpenAI 的地区校验。账号和实际出口仍须符合 [OpenAI 支持地区](https://developers.openai.com/api/docs/supported-countries)及服务要求；若返回 `unsupported_country_region_territory`，请核对实际出口地区与授权条件。
 
 ```powershell
 New-Item -ItemType Directory -Force .data | Out-Null
@@ -98,8 +104,9 @@ OpenAI 兼容范围目前是 Chat Completions 的文本、图片输入、函数�
 ## 使用边界
 
 - 网关**不会读取或控制 Codex 桌面窗口**。它通过独立的 Sign in with ChatGPT 授权调用符合条件的 OpenAI Responses API 请求。套餐资格、模型权限和共享额度仍由 OpenAI 决定；网关不会生成额外额度。
-- 管理页显示的剩余请求数、Token 数以及日/周/月图表是**本地网关统计**，不代表 ChatGPT 账号的真实余额。账号用量请到 [ChatGPT 官方用量页](https://chatgpt.com/settings/usage)查看。每日 Token 限额在响应完成后累计，边界处可能多出一次请求。
-- 图表保存约 400 天的每日汇总，按 `GATEWAY_TIMEZONE`（默认 `Asia/Shanghai`）划分日期。旧版本升级当天可继承密钥累计总数，更早的历史无法补齐。
+- 管理页显示的剩余请求数、Token 数以及小时/日/周/月图表是**本地网关统计**，不代表 ChatGPT 账号的真实余额。账号用量请到 [ChatGPT 官方用量页](https://chatgpt.com/settings/usage)查看。每日 Token 限额在响应完成后累计，边界处可能多出一次请求。
+- “套餐用量参考”根据手动选择的 Plus、Pro 5×、Pro 20× 或 Business 标准席位，显示 [OpenAI 公开表格](https://help.openai.com/zh-hans-cn/articles/20001516-managing-usage-with-gpt-6-astra-in-work-and-codex)中每五小时的预计本地消息数；这不是剩余额度，实际用量受模型、任务、思考等级及每周限制影响。普通会员暂无对应公开估算；Business 高级席位无五小时限额，页面不换算固定数值。
+- 图表保存约 400 天的每日汇总，并显示最近 24 小时的小时记录，按 `GATEWAY_TIMEZONE`（默认 `Asia/Shanghai`）划分时间。小时记录从本版启用后累计，旧数据不能拆分到小时。
 - Claude Code 对非 Claude 模型网关没有官方兼容承诺。项目覆盖常见文本、图片输入、工具调用和流式输出；请先用小任务验证所用客户端版本。
 
 ## 接口与数据

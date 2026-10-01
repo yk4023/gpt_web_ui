@@ -65,7 +65,9 @@ function updateTemplate() {
   const openaiModel = $('openai-model').value || values.ANTHROPIC_MODEL;
   $('openai-config').textContent = `$env:OPENAI_BASE_URL='${current.baseUrl}/v1'\n$env:OPENAI_API_KEY='${values.ANTHROPIC_AUTH_TOKEN.replaceAll("'", "''")}'\n$env:OPENAI_MODEL='${openaiModel.replaceAll("'", "''")}'`;
 }
-function modelRow(alias = '', upstream = '') {
+function modelRow(alias = '', route = '') {
+  const upstream = typeof route === 'string' ? route : route.model || '';
+  const effort = typeof route === 'string' ? '' : route.reasoningEffort || '';
   const row = document.createElement('div'); row.className = 'model-row';
   const name = document.createElement('input'); name.className = 'model-alias'; name.placeholder = '例如 codex-luna'; name.setAttribute('aria-label', '客户端模型别名'); name.value = alias;
   const targetBox = document.createElement('div'); targetBox.className = 'model-target-box';
@@ -73,10 +75,16 @@ function modelRow(alias = '', upstream = '') {
   const target = document.createElement('input'); target.className = 'model-target'; target.placeholder = '或手动输入模型 ID'; target.setAttribute('aria-label', '上游模型 ID'); target.value = upstream;
   picker.addEventListener('change', () => { if (picker.value) { target.value = picker.value; modelDirty = true; } });
   targetBox.append(picker, target);
+  const reasoning = document.createElement('select'); reasoning.className = 'model-reasoning'; reasoning.setAttribute('aria-label', '思考等级');
+  for (const [value, label] of [['', '默认'], ['low', '低'], ['medium', '中'], ['high', '高'], ['xhigh', '极高']]) {
+    const option = document.createElement('option'); option.value = value; option.textContent = label; reasoning.append(option);
+  }
+  reasoning.value = effort;
+  reasoning.addEventListener('change', () => { modelDirty = true; });
   const remove = document.createElement('button'); remove.className = 'button button-secondary button-small'; remove.type = 'button'; remove.textContent = '移除'; remove.setAttribute('aria-label', `移除映射 ${alias || '空行'}`);
   for (const input of [name, target]) input.addEventListener('input', () => { modelDirty = true; });
   remove.addEventListener('click', () => { row.remove(); modelDirty = true; });
-  row.append(name, targetBox, remove);
+  row.append(name, targetBox, reasoning, remove);
   $('model-rows').append(row);
   updateModelPicker(row);
 }
@@ -93,7 +101,7 @@ function updateModelPicker(row) {
 }
 function renderModelRows(models) {
   $('model-rows').replaceChildren();
-  for (const [alias, upstream] of Object.entries(models)) modelRow(alias, upstream);
+  for (const [alias, route] of Object.entries(models)) modelRow(alias, route);
   if (!Object.keys(models).length) modelRow();
 }
 function collectModels() {
@@ -104,7 +112,7 @@ function collectModels() {
     if (!alias && !target) continue;
     if (!alias || !target) throw Error('请完整填写每一条模型映射');
     if (Object.hasOwn(models, alias)) throw Error(`模型别名重复：${alias}`);
-    models[alias] = target;
+    models[alias] = { model: target, reasoningEffort: row.querySelector('.model-reasoning').value };
   }
   if (!Object.keys(models).length) throw Error('请至少添加一条模型映射');
   return models;
@@ -130,6 +138,37 @@ function renderQuota(data) {
   if (active.some(key => key.id === previous)) selector.value = previous;
   updateQuotaValues();
 }
+const planEstimates = {
+  'gpt-6-astra': [[5, 45], [25, 225], [100, 900], [5, 45]],
+  'gpt-5.6-sol': [[10, 100], [50, 500], [200, 2000], [10, 100]],
+  'gpt-5.6-terra': [[25, 200], [125, 1000], [500, 4000], [25, 200]],
+  'gpt-5.6-luna': [[250, 2000], [1250, 10000], [5000, 40000], [250, 2000]],
+  'gpt-5.5': [[15, 80], [75, 400], [300, 1600], [15, 80]],
+  'gpt-5.4': [[20, 100], [100, 500], [400, 2000], [20, 100]],
+  'gpt-5.4-mini': [[60, 350], [300, 1750], [1200, 7000], [60, 350]]
+};
+function renderPlanEstimate() {
+  const plan = $('estimate-plan').value;
+  const index = { plus: 0, pro5: 1, pro20: 2, business: 3 }[plan];
+  const range = planEstimates[$('estimate-model').value]?.[index];
+  $('estimate-range').textContent = range ? `${range[0].toLocaleString()}–${range[1].toLocaleString()} 条` : '—';
+  $('estimate-note').textContent = plan === 'free'
+    ? '普通会员暂无适用于此处的公开估算；实际可用性以账号授权和官方用量页为准。'
+    : plan === 'businessPremium'
+      ? 'Business 高级席位约为标准席位 5 倍包含用量，但无五小时限额，不能换算为此处的五小时消息数。'
+      : plan ? '公开范围仅供参考，不代表剩余额度。实际消耗受任务、模型和思考等级影响，也可能受每周限额约束。'
+        : '授权未提供套餐等级，请手动选择。模型、任务与思考等级都会影响实际用量；部分套餐还有每周限制。';
+}
+function renderNetwork(network = { proxyUrl: '', source: 'dashboard' }) {
+  const input = $('proxy-url');
+  if (document.activeElement !== input) input.value = network.proxyUrl || '';
+  const locked = network.source === 'environment';
+  input.disabled = locked;
+  $('save-proxy').disabled = locked;
+  $('proxy-status').textContent = locked
+    ? `当前代理由 GATEWAY_PROXY_URL 环境变量设置：${network.proxyUrl}`
+    : network.proxyUrl ? `当前通过本机代理访问上游：${network.proxyUrl}` : '当前直连上游';
+}
 function updateQuotaValues() {
   const key = current?.keys.find(item => item.id === $('quota-key-select').value);
   const remaining = (limit, used) => limit ? Math.max(0, limit - used).toLocaleString() : '不限';
@@ -145,15 +184,15 @@ function renderUsage(data) {
   $('usage-current').textContent = format(values.at(-1) || 0);
   $('usage-total').textContent = format(values.reduce((sum, item) => sum + item, 0));
   $('usage-peak').textContent = format(Math.max(0, ...values));
-  for (const period of ['day', 'week', 'month']) $('usage-' + period).classList.toggle('active', usagePeriod === period);
+  for (const period of ['hour', 'day', 'week', 'month']) $('usage-' + period).classList.toggle('active', usagePeriod === period);
   for (const metric of ['requests', 'tokens']) $('usage-' + metric).classList.toggle('active', usageMetric === metric);
   const chart = $('usage-chart'); chart.replaceChildren();
-  const periodName = { day: '日', week: '周', month: '月' }[usagePeriod];
+  const periodName = { hour: '小时', day: '日', week: '周', month: '月' }[usagePeriod];
   const metricName = usageMetric === 'requests' ? '请求' : 'Token';
   chart.setAttribute('aria-label', `本地网关按${periodName}统计${metricName}；当前周期 ${values.at(-1) || 0}，图表范围合计 ${values.reduce((sum, item) => sum + item, 0)}`);
   for (const [index, point] of points.entries()) {
     const item = document.createElement('div'); item.className = 'usage-bar-item';
-    const label = usagePeriod === 'month' ? point.date.slice(0, 7) : point.date.slice(5);
+    const label = usagePeriod === 'month' ? point.date.slice(0, 7) : usagePeriod === 'hour' ? point.date.slice(11) : point.date.slice(5);
     const track = document.createElement('div'); track.className = 'usage-bar-track';
     const bar = document.createElement('div'); bar.className = 'usage-bar';
     bar.style.height = `${Math.max(values[index] ? 4 : 0, values[index] / max * 100)}%`;
@@ -278,6 +317,8 @@ function render(data) {
   $('last-updated').textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`;
   renderKeys(data.keys);
   renderQuota(data);
+  renderPlanEstimate();
+  renderNetwork(data.network);
   renderUsage(data);
   renderLogs(data.log);
 }
@@ -299,7 +340,13 @@ $('copy-openai-base').addEventListener('click', () => copy($('openai-base-url').
 $('copy-openai-config').addEventListener('click', () => copy($('openai-config').textContent, 'OpenAI 配置已复制'));
 $('copy-key').addEventListener('click', () => copy(lastKey, 'API Key 已复制'));
 $('quota-key-select').addEventListener('change', updateQuotaValues);
-for (const period of ['day', 'week', 'month']) $('usage-' + period).addEventListener('click', () => { usagePeriod = period; if (current) renderUsage(current); });
+for (const id of ['estimate-plan', 'estimate-model']) $(id).addEventListener('change', renderPlanEstimate);
+$('save-proxy').addEventListener('click', () => withButton($('save-proxy'), async () => {
+  await api('/admin/api/network', 'PUT', { proxyUrl: $('proxy-url').value.trim() });
+  await refresh();
+  toast('上游代理设置已保存并生效');
+}));
+for (const period of ['hour', 'day', 'week', 'month']) $('usage-' + period).addEventListener('click', () => { usagePeriod = period; if (current) renderUsage(current); });
 for (const metric of ['requests', 'tokens']) $('usage-' + metric).addEventListener('click', () => { usageMetric = metric; if (current) renderUsage(current); });
 $('add-model-row').addEventListener('click', () => { modelRow(); modelDirty = true; });
 for (const id of ['env-key', 'env-context-tokens', 'env-main-model', 'env-haiku-model', 'env-sonnet-model', 'env-opus-model', 'env-subagent-model', 'openai-model']) {
