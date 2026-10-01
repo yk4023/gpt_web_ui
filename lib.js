@@ -99,6 +99,93 @@ export function toResponses(body, model, { oauth = false, reasoningByCall = null
   return result;
 }
 
+export function openaiToAnthropic(body) {
+  if (!body || !Array.isArray(body.messages) || !body.messages.length) throw Object.assign(new Error('messages must be a nonempty array'), { status: 400 });
+  if (body.n !== undefined && body.n !== 1) throw Object.assign(new Error('Only n=1 is supported'), { status: 422 });
+  if (body.response_format && body.response_format.type !== 'text') throw Object.assign(new Error('Only text response_format is supported'), { status: 422 });
+  if (body.modalities || body.audio) throw Object.assign(new Error('Audio output is not supported'), { status: 422 });
+  const system = [];
+  const messages = [];
+  for (const message of body.messages) {
+    if (message.role === 'system' || message.role === 'developer') {
+      if (typeof message.content !== 'string') throw Object.assign(new Error('Unsupported system content'), { status: 422 });
+      system.push(message.content);
+    } else if (message.role === 'tool') {
+      if (!message.tool_call_id) throw Object.assign(new Error('tool_call_id is required'), { status: 400 });
+      messages.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: message.tool_call_id, content: String(message.content ?? '') }] });
+    } else if (message.role === 'assistant') {
+      if (message.content !== null && message.content !== undefined && typeof message.content !== 'string') throw Object.assign(new Error('Unsupported assistant content'), { status: 422 });
+      if (message.tool_calls !== undefined && !Array.isArray(message.tool_calls)) throw Object.assign(new Error('Invalid tool_calls'), { status: 400 });
+      const content = [];
+      if (typeof message.content === 'string' && message.content) content.push({ type: 'text', text: message.content });
+      for (const call of message.tool_calls || []) {
+        if (call.type !== 'function' || !call.id || !call.function?.name) throw Object.assign(new Error('Unsupported tool call'), { status: 422 });
+        let input;
+        try { input = JSON.parse(call.function.arguments || '{}'); } catch { throw Object.assign(new Error('Invalid tool call arguments'), { status: 400 }); }
+        content.push({ type: 'tool_use', id: call.id, name: call.function.name, input });
+      }
+      messages.push({ role: 'assistant', content });
+    } else if (message.role === 'user') {
+      if (typeof message.content === 'string') messages.push({ role: 'user', content: message.content });
+      else if (Array.isArray(message.content)) {
+        const content = message.content.map(part => {
+          if (part.type === 'text') return { type: 'text', text: part.text || '' };
+          if (part.type === 'image_url' && typeof part.image_url?.url === 'string') {
+            const url = part.image_url.url;
+            const match = /^data:([^;]+);base64,(.+)$/.exec(url);
+            return { type: 'image', source: match ? { type: 'base64', media_type: match[1], data: match[2] } : { type: 'url', url } };
+          }
+          throw Object.assign(new Error(`Unsupported user content: ${part.type || 'unknown'}`), { status: 422 });
+        });
+        messages.push({ role: 'user', content });
+      } else throw Object.assign(new Error('Unsupported user content'), { status: 422 });
+    } else throw Object.assign(new Error(`Unsupported message role: ${message.role || 'unknown'}`), { status: 422 });
+  }
+  if (body.tools !== undefined && !Array.isArray(body.tools)) throw Object.assign(new Error('Invalid tools'), { status: 400 });
+  const tools = (body.tools || []).map(tool => {
+    if (tool.type !== 'function' || !tool.function?.name || !tool.function?.parameters) throw Object.assign(new Error('Unsupported tool definition'), { status: 422 });
+    return { name: tool.function.name, description: tool.function.description || '', input_schema: tool.function.parameters };
+  });
+  let tool_choice;
+  if (body.tool_choice === 'none') tool_choice = { type: 'none' };
+  else if (body.tool_choice === 'required') tool_choice = { type: 'any' };
+  else if (body.tool_choice?.type === 'function') {
+    if (!body.tool_choice.function?.name) throw Object.assign(new Error('tool_choice.function.name is required'), { status: 400 });
+    tool_choice = { type: 'tool', name: body.tool_choice.function.name };
+  }
+  else if (body.tool_choice !== undefined && body.tool_choice !== 'auto') throw Object.assign(new Error('Unsupported tool_choice'), { status: 422 });
+  return { model: body.model, stream: !!body.stream, messages, system: system.join('\n'), tools, tool_choice, max_tokens: body.max_completion_tokens || body.max_tokens };
+}
+
+export function openaiCompletion(message) {
+  const calls = message.content.filter(item => item.type === 'tool_use').map(item => ({ id: item.id, type: 'function', function: { name: item.name, arguments: JSON.stringify(item.input) } }));
+  return {
+    id: `chatcmpl_${message.id}`, object: 'chat.completion', created: Math.floor(Date.now() / 1000), model: message.model,
+    choices: [{ index: 0, message: { role: 'assistant', content: message.content.filter(item => item.type === 'text').map(item => item.text).join('') || null, ...(calls.length ? { tool_calls: calls } : {}) }, finish_reason: calls.length ? 'tool_calls' : 'stop' }],
+    usage: { prompt_tokens: message.usage.input_tokens, completion_tokens: message.usage.output_tokens, total_tokens: message.usage.input_tokens + message.usage.output_tokens }
+  };
+}
+
+export function createOpenAIStream(send, model) {
+  let responseId = `chatcmpl_${id().replaceAll('-', '')}`;
+  const created = Math.floor(Date.now() / 1000);
+  const emit = (delta, finish_reason = null) => send(`data: ${JSON.stringify({ id: responseId, object: 'chat.completion.chunk', created, model, choices: [{ index: 0, delta, finish_reason }] })}\n\n`);
+  const toolIndices = new Map();
+  function accept(frame) {
+    const data = JSON.parse(frame.slice(frame.indexOf('data: ') + 6));
+    if (data.type === 'message_start') { responseId = `chatcmpl_${data.message.id}`; emit({ role: 'assistant', content: '' }); }
+    if (data.type === 'content_block_start' && data.content_block.type === 'tool_use') {
+      const index = toolIndices.size; toolIndices.set(data.index, index);
+      emit({ tool_calls: [{ index, id: data.content_block.id, type: 'function', function: { name: data.content_block.name, arguments: '' } }] });
+    }
+    if (data.type === 'content_block_delta' && data.delta.type === 'text_delta') emit({ content: data.delta.text });
+    if (data.type === 'content_block_delta' && data.delta.type === 'input_json_delta') emit({ tool_calls: [{ index: toolIndices.get(data.index), function: { arguments: data.delta.partial_json } }] });
+    if (data.type === 'message_delta') emit({}, data.delta.stop_reason === 'tool_use' ? 'tool_calls' : data.delta.stop_reason === 'max_tokens' ? 'length' : 'stop');
+    if (data.type === 'message_stop') send('data: [DONE]\n\n');
+  }
+  return { accept };
+}
+
 export function createTranslator(requestModel, send, streaming) {
   let responseId = `msg_${id().replaceAll('-', '')}`;
   let started = false, completed = false, failed = null, usage = { input_tokens: 0, output_tokens: 0 };

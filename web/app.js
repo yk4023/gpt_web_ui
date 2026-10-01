@@ -4,6 +4,7 @@ let lastKey = '';
 let current = null;
 let modelDirty = false;
 let templateFormat = 'json';
+let availableModels = [];
 let usagePeriod = 'day';
 let usageMetric = 'requests';
 let toastTimer;
@@ -60,16 +61,35 @@ function updateTemplate() {
   $('template-title').textContent = templateFormat === 'json' ? 'settings.json · Claude Code' : 'PowerShell · Claude Code';
   $('format-json').classList.toggle('active', templateFormat === 'json');
   $('format-ps').classList.toggle('active', templateFormat === 'ps');
+  $('openai-base-url').textContent = `${current.baseUrl}/v1`;
+  const openaiModel = $('openai-model').value || values.ANTHROPIC_MODEL;
+  $('openai-config').textContent = `$env:OPENAI_BASE_URL='${current.baseUrl}/v1'\n$env:OPENAI_API_KEY='${values.ANTHROPIC_AUTH_TOKEN.replaceAll("'", "''")}'\n$env:OPENAI_MODEL='${openaiModel.replaceAll("'", "''")}'`;
 }
 function modelRow(alias = '', upstream = '') {
   const row = document.createElement('div'); row.className = 'model-row';
   const name = document.createElement('input'); name.className = 'model-alias'; name.placeholder = '例如 codex-luna'; name.setAttribute('aria-label', '客户端模型别名'); name.value = alias;
-  const target = document.createElement('input'); target.className = 'model-target'; target.placeholder = '当前账号可用的模型 ID'; target.setAttribute('aria-label', '上游模型 ID'); target.setAttribute('list', 'upstream-model-options'); target.value = upstream;
+  const targetBox = document.createElement('div'); targetBox.className = 'model-target-box';
+  const picker = document.createElement('select'); picker.className = 'model-picker'; picker.setAttribute('aria-label', '选择已查询的上游模型');
+  const target = document.createElement('input'); target.className = 'model-target'; target.placeholder = '或手动输入模型 ID'; target.setAttribute('aria-label', '上游模型 ID'); target.value = upstream;
+  picker.addEventListener('change', () => { if (picker.value) { target.value = picker.value; modelDirty = true; } });
+  targetBox.append(picker, target);
   const remove = document.createElement('button'); remove.className = 'button button-secondary button-small'; remove.type = 'button'; remove.textContent = '移除'; remove.setAttribute('aria-label', `移除映射 ${alias || '空行'}`);
   for (const input of [name, target]) input.addEventListener('input', () => { modelDirty = true; });
   remove.addEventListener('click', () => { row.remove(); modelDirty = true; });
-  row.append(name, target, remove);
+  row.append(name, targetBox, remove);
   $('model-rows').append(row);
+  updateModelPicker(row);
+}
+function updateModelPicker(row) {
+  const picker = row.querySelector('.model-picker');
+  const target = row.querySelector('.model-target');
+  picker.replaceChildren();
+  const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = availableModels.length ? '从可用模型中选择' : '先查询可用模型'; picker.append(placeholder);
+  for (const model of availableModels) {
+    const option = document.createElement('option'); option.value = model.id; option.textContent = `${model.name} · ${model.id}`; picker.append(option);
+  }
+  picker.disabled = !availableModels.length;
+  picker.value = availableModels.some(model => model.id === target.value) ? target.value : '';
 }
 function renderModelRows(models) {
   $('model-rows').replaceChildren();
@@ -145,7 +165,7 @@ function renderUsage(data) {
 function renderModelSelectors(models) {
   const aliases = Object.keys(models);
   const fallback = aliases.includes('codex-luna') ? 'codex-luna' : aliases[0] || '';
-  for (const id of ['env-main-model', 'env-haiku-model', 'env-sonnet-model', 'env-opus-model', 'env-subagent-model']) {
+  for (const id of ['env-main-model', 'env-haiku-model', 'env-sonnet-model', 'env-opus-model', 'env-subagent-model', 'openai-model']) {
     const selector = $(id);
     const previous = selector.value;
     selector.replaceChildren();
@@ -275,12 +295,14 @@ $('admin-token').addEventListener('keydown', event => { if (event.key === 'Enter
 $('refresh-button').addEventListener('click', () => withButton($('refresh-button'), async () => { await refresh(); toast('数据已更新'); }));
 $('copy-base').addEventListener('click', () => copy(current?.baseUrl || '', 'Base URL 已复制'));
 $('copy-command').addEventListener('click', () => copy($('cli-command').textContent, '接入配置已复制'));
+$('copy-openai-base').addEventListener('click', () => copy($('openai-base-url').textContent, 'OpenAI Base URL 已复制'));
+$('copy-openai-config').addEventListener('click', () => copy($('openai-config').textContent, 'OpenAI 配置已复制'));
 $('copy-key').addEventListener('click', () => copy(lastKey, 'API Key 已复制'));
 $('quota-key-select').addEventListener('change', updateQuotaValues);
 for (const period of ['day', 'week', 'month']) $('usage-' + period).addEventListener('click', () => { usagePeriod = period; if (current) renderUsage(current); });
 for (const metric of ['requests', 'tokens']) $('usage-' + metric).addEventListener('click', () => { usageMetric = metric; if (current) renderUsage(current); });
 $('add-model-row').addEventListener('click', () => { modelRow(); modelDirty = true; });
-for (const id of ['env-key', 'env-context-tokens', 'env-main-model', 'env-haiku-model', 'env-sonnet-model', 'env-opus-model', 'env-subagent-model']) {
+for (const id of ['env-key', 'env-context-tokens', 'env-main-model', 'env-haiku-model', 'env-sonnet-model', 'env-opus-model', 'env-subagent-model', 'openai-model']) {
   $(id).addEventListener('input', updateTemplate);
   $(id).addEventListener('change', updateTemplate);
 }
@@ -321,16 +343,16 @@ $('select-account').addEventListener('click', () => withButton($('select-account
 }));
 $('discover-models').addEventListener('click', () => withButton($('discover-models'), async () => {
   const result = await api('/admin/api/upstream/models');
+  availableModels = result.models;
   const container = $('available-models');
   container.replaceChildren();
-  const options = $('upstream-model-options'); options.replaceChildren();
   if (!result.models.length) {
     const empty = document.createElement('span'); empty.className = 'empty-inline'; empty.textContent = '当前账号没有列出可用模型'; container.append(empty);
   }
   for (const model of result.models) {
     const chip = document.createElement('span'); chip.className = 'model-chip'; chip.textContent = `${model.name} · ${model.id}`; container.append(chip);
-    const option = document.createElement('option'); option.value = model.id; options.append(option);
   }
+  for (const row of $('model-rows').children) updateModelPicker(row);
   toast(`已获取 ${result.models.length} 个模型`);
 }));
 $('save-models').addEventListener('click', () => withButton($('save-models'), async () => {

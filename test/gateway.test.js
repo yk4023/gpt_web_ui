@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
-import { authenticate, checkQuota, createTranslator, digest, toResponses, usageSeries } from '../lib.js';
+import { authenticate, checkQuota, createOpenAIStream, createTranslator, digest, openaiCompletion, openaiToAnthropic, toResponses, usageSeries } from '../lib.js';
 import { ChatGPTAuth } from '../oauth.js';
 
 test('Anthropic tool messages convert to Responses calls and results', () => {
@@ -24,6 +24,32 @@ test('Anthropic tool messages convert to Responses calls and results', () => {
   assert.equal(oauthResult.tools[0].type, 'namespace');
   assert.equal(oauthResult.input[1].name, 'Read');
   assert.equal(oauthResult.input[1].namespace, 'claude_code');
+});
+
+test('OpenAI messages, tool calls, and streaming chunks convert correctly', () => {
+  const chat = openaiToAnthropic({ model: 'codex-sol', messages: [
+    { role: 'system', content: 'Be brief' },
+    { role: 'assistant', tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'Read', arguments: '{"path":"a.txt"}' } }] },
+    { role: 'tool', tool_call_id: 'call_1', content: 'hello' },
+    { role: 'user', content: 'Summarize' }
+  ], tools: [{ type: 'function', function: { name: 'Read', parameters: { type: 'object' } } }] });
+  const payload = toResponses(chat, 'gpt-test', { oauth: true });
+  assert.equal(payload.instructions, 'Be brief');
+  assert.equal(payload.input[0].type, 'function_call');
+  assert.equal(payload.input[1].type, 'function_call_output');
+  assert.equal(payload.tools[0].type, 'namespace');
+  const frames = [];
+  const stream = createOpenAIStream(frame => frames.push(frame), 'codex-sol');
+  const translator = createTranslator('codex-sol', frame => stream.accept(frame), true);
+  translator.accept({ type: 'response.created', response: { id: 'resp_1' } });
+  translator.accept({ type: 'response.output_item.done', output_index: 0, item: { type: 'function_call', call_id: 'call_2', name: 'claude_code.Read', arguments: '{"path":"b.txt"}' } });
+  translator.accept({ type: 'response.completed', response: { usage: { input_tokens: 8, output_tokens: 3 } } });
+  const result = openaiCompletion(translator.result());
+  assert.equal(result.choices[0].message.tool_calls[0].function.name, 'Read');
+  assert.equal(result.choices[0].finish_reason, 'tool_calls');
+  assert.equal(result.usage.total_tokens, 11);
+  assert.equal(frames.at(-1), 'data: [DONE]\n\n');
+  assert.ok(frames.some(frame => frame.includes('"finish_reason":"tool_calls"')));
 });
 
 test('ChatGPT sign-in verifies identity and renews an expiring token', async t => {
@@ -173,4 +199,19 @@ test('local server creates a key, forwards a request, and records usage', async 
   assert.equal(data.usage.month.at(-1).requests, 2);
   const saved = JSON.parse(fs.readFileSync(path.join(tmp, 'state.json'), 'utf8'));
   assert.equal(saved.usageDaily[data.usage.day.at(-1).date].requests, 2);
+  const openaiKeyResponse = await fetch(`${base}/admin/api/keys`, { method: 'POST', headers: { 'X-Admin-Token': adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'openai', maxRequests: 2 }) });
+  const { key: openaiKey } = await openaiKeyResponse.json();
+  const chat = stream => fetch(`${base}/v1/chat/completions`, { method: 'POST', headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'codex-sol', stream, messages: [{ role: 'user', content: 'hi' }] }) });
+  const completion = await chat(false);
+  assert.equal(completion.status, 200);
+  const completed = await completion.json();
+  assert.equal(completed.object, 'chat.completion');
+  assert.equal(completed.choices[0].message.content, 'hello');
+  assert.equal(completed.usage.total_tokens, 9);
+  const chatStream = await chat(true);
+  assert.equal(chatStream.status, 200);
+  const chunks = await chatStream.text();
+  assert.match(chunks, /chat\.completion\.chunk/);
+  assert.match(chunks, /data: \[DONE\]/);
+  assert.equal((await chat(false)).status, 429);
 });

@@ -197,6 +197,8 @@ textarea { min-height: 150px; padding: 16px; resize: vertical; font: 12px/1.7 ui
 .mapping-labels { padding: 0 2px 8px; color: #8391a7; font-size: 10px; font-weight: 700; }
 .model-rows { display: grid; gap: 9px; }
 .model-row input { min-width: 0; font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; }
+.model-target-box { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.model-picker { font-size: 11px; color: #3d557d; }
 .model-row .button { padding: 0 8px; }
 .mapping-footer { display: flex; justify-content: space-between; align-items: center; gap: 15px; margin-top: 15px; color: #96a1b4; font-size: 11px; }
 .mapping-footer code { color: #607599; background: #f3f6fb; border-radius: 4px; padding: 3px 5px; }
@@ -217,6 +219,13 @@ textarea { min-height: 150px; padding: 16px; resize: vertical; font: 12px/1.7 ui
 .terminal-bar .terminal-copy { margin-left: 0; }
 .terminal-panel pre { margin: 0; padding: 22px 25px 27px; overflow-x: auto; color: #bcd3ff; font: 12px/1.85 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre; }
 .integration-note { margin: 12px 1px 0; color: #9aa7b9; font-size: 11px; line-height: 1.6; }
+.openai-panel { margin-top: 22px; }
+.openai-panel code { color: #3c5d94; font: 11px ui-monospace, SFMono-Regular, Consolas, monospace; }
+.openai-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+.inline-copy { min-height: 41px; display: flex; align-items: center; gap: 10px; padding: 5px 6px 5px 12px; border: 1px solid #dce3ed; border-radius: 9px; }
+.inline-copy code { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.openai-config-head { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; font-size: 11px; }
+.openai-config { margin: 10px 0 0; padding: 16px; overflow-x: auto; border-radius: 10px; background: #f3f6fc; color: #345078; font: 11px/1.7 ui-monospace, SFMono-Regular, Consolas, monospace; }
 .activity-panel { padding: 12px 17px; }
 .activity-panel table { min-width: 650px; }
 .page-footer { display: flex; justify-content: space-between; gap: 20px; margin-top: 44px; padding-top: 22px; border-top: 1px solid var(--line); color: #a1acba; font-size: 10px; }
@@ -263,6 +272,7 @@ textarea { min-height: 150px; padding: 16px; resize: vertical; font: 12px/1.7 ui
   .panel { padding: 20px; }
   .button-row .button { flex: 1 1 auto; }
   .env-grid { grid-template-columns: 1fr; }
+  .openai-grid { grid-template-columns: 1fr; }
   .usage-summary { gap: 6px; }
   .usage-summary > div { padding: 10px; }
   .usage-summary strong { font-size: 16px; }

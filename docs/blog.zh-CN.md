@@ -7,7 +7,7 @@
 
 这就是我做这个项目的直接原因：**我已经在使用 ChatGPT/Codex 套餐，希望让 Claude Code 和其他本地应用也能调用该套餐允许使用的模型，而不必为了同一类本地 AI 请求再单独配置 OpenAI API Key、购买 API 额度或另一份模型调用套餐。** 一个账号，在符合 OpenAI 资格、授权和额度规则时，供多个本地工具使用。
 
-为此我做了 **Codex Claude Gateway**：通过 OpenAI 的 **Sign in with ChatGPT** 给本地网关独立授权，再把授权范围内的 Responses API 推理能力，以 Anthropic Messages 格式提供给 Claude Code 等客户端。客户端只需填写本地 Base URL 和网关生成的密钥。OpenAI 官方明确允许符合条件的开源应用使用用户的 ChatGPT 套餐完成符合条件的请求，无需用户另行提供 API Key；这也是本项目采用的接入方式。详见 [OpenAI 官方快速入门](https://developers.openai.com/siwc/quickstart)。
+为此我做了 **Codex Claude Gateway**：通过 OpenAI 的 **Sign in with ChatGPT** 给本地网关独立授权，再把授权范围内的 Responses API 推理能力，以 **Anthropic Messages 和 OpenAI Chat Completions** 两种格式提供给其他本地应用。客户端只需填写对应 Base URL 和网关生成的密钥。OpenAI 官方明确允许符合条件的开源应用使用用户的 ChatGPT 套餐完成符合条件的请求，无需用户另行提供 API Key；这也是本项目采用的接入方式。详见 [OpenAI 官方快速入门](https://developers.openai.com/siwc/quickstart)。
 
 这里的“映射”指**把套餐授权可用的推理能力通过本地 API 提供给其他应用**，并非读取或控制 Codex 桌面窗口，也不是把账号额度转卖、转移或变成一份独立的新额度。
 
@@ -24,6 +24,7 @@
 | 网关限额 | 为密钥设置每日请求数、Token 数和并发上限 |
 | 使用趋势 | 按日、周、月查看本地请求数与 Token 消耗图表 |
 | 配置生成 | 一键生成 Claude Code 的 `env` JSON 或 PowerShell 配置 |
+| 双接口接入 | Claude Code 使用 Anthropic Messages；其他工具可使用 OpenAI Chat Completions 接口 |
 | 上游连接 | 支持独立的 Sign in with ChatGPT 授权，或使用自己的 OpenAI API Key |
 
 所有管理数据保存在本机。服务默认只监听 `127.0.0.1:8765`，不需要额外安装 npm 依赖。**如果你的 ChatGPT 账号不具备套餐推理资格，也可以使用自己的 OpenAI API Key，但这属于按 API 计费的备用模式。**
@@ -44,7 +45,7 @@ npm start
 Get-Content .data/admin-token
 ```
 
-**第二步：连接套餐并配置模型。** 在页面点击“使用 ChatGPT 登录”，授权网关使用符合条件的 ChatGPT 套餐请求。接着查询当前账号可用模型，为客户端别名添加模型映射。例如把 `codex-luna` 映射到账号实际可用的模型 ID。初始映射只是示例，请以查询结果为准。
+**第二步：连接套餐并配置模型。** 在页面点击“使用 ChatGPT 登录”，授权网关使用符合条件的 ChatGPT 套餐请求。接着查询当前账号可用模型，为客户端别名添加模型映射。上游模型 ID 可直接从查询结果的下拉列表选取。例如把 `codex-luna` 映射到账号实际可用的模型 ID。初始映射只是示例，请以查询结果为准。
 
 **第三步：生成调用密钥和客户端配置。** 创建一枚 `cg_...` 网关密钥，在“接入 Claude Code”选择各档位模型，复制页面生成的 `env JSON` 到 Claude Code 的 `settings.json`；也可以切换为 PowerShell 格式，在同一个终端启动 `claude`。
 
@@ -66,6 +67,8 @@ Get-Content .data/admin-token
 ```
 
 如果已有 `settings.json`，请把生成的 `env` 字段合并进去。上下文数值可以编辑，但它不会增加上游模型的真实容量。
+
+其他支持 OpenAI Chat Completions 的应用可填入 `http://127.0.0.1:8765/v1` 作为 Base URL，API Key 使用同一枚网关 `cg_...` 密钥，模型填写保存过的别名。管理页可一键复制对应环境变量。这里的 OpenAI 兼容指 Chat Completions 和模型列表，并非所有 OpenAI 专有接口。
 
 ## 使用趋势到底统计了什么？
 

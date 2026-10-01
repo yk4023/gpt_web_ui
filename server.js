@@ -2,7 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { authenticate, checkQuota, createTranslator, day, digest, id, randomKey, toResponses, usageSeries } from './lib.js';
+import { authenticate, checkQuota, createOpenAIStream, createTranslator, day, digest, id, openaiCompletion, openaiToAnthropic, randomKey, toResponses, usageSeries } from './lib.js';
 import { ChatGPTAuth } from './oauth.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -172,7 +172,11 @@ async function handleAdmin(req, res, url) {
   error(res, 404, 'Not found');
 }
 
-async function runInference(req, res, body, key) {
+async function runInference(req, res, body, key, format = 'anthropic') {
+  if (format === 'openai') {
+    try { body = openaiToAnthropic(body); }
+    catch (e) { return error(res, e.status || 400, e.message); }
+  }
   let upstreamToken;
   try { upstreamToken = staticToken || await chatgpt.token(); }
   catch (e) { return error(res, 503, e.message); }
@@ -210,7 +214,8 @@ async function runInference(req, res, body, key) {
       return error(res, upstreamResponse.status, `Upstream: ${text}`);
     }
     if (body.stream) res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
-    translator = createTranslator(alias, data => res.write(data), !!body.stream);
+    const openaiStream = format === 'openai' && body.stream ? createOpenAIStream(data => res.write(data), alias) : null;
+    translator = createTranslator(alias, data => openaiStream ? openaiStream.accept(data) : res.write(data), !!body.stream);
     let pending = '';
     const decoder = new TextDecoder();
     for await (const chunk of upstreamResponse.body) {
@@ -231,11 +236,11 @@ async function runInference(req, res, body, key) {
     bucket.inputTokens += result.usage.input_tokens;
     bucket.outputTokens += result.usage.output_tokens;
     log(key, alias, 200, result.usage); await save();
-    if (body.stream) res.end(); else json(res, 200, result);
+    if (body.stream) res.end(); else json(res, 200, format === 'openai' ? openaiCompletion(result) : result);
   } catch (e) {
     log(key, alias, 502, translator?.usage || {}, e.message); await save();
     if (res.headersSent) {
-      res.write(`event: error\ndata: ${JSON.stringify({ type: 'error', error: { type: 'api_error', message: e.message } })}\n\n`); res.end();
+      res.write(format === 'openai' ? `data: ${JSON.stringify({ error: { type: 'api_error', message: e.message } })}\n\ndata: [DONE]\n\n` : `event: error\ndata: ${JSON.stringify({ type: 'error', error: { type: 'api_error', message: e.message } })}\n\n`); res.end();
     } else error(res, 502, e.message, 'api_error');
   } finally { key.active--; await save(); }
 }
@@ -281,6 +286,11 @@ const server = http.createServer(async (req, res) => {
       const key = authenticate(state, bearer(req));
       if (!key) return error(res, 401, 'Invalid API key', 'authentication_error');
       return await runInference(req, res, await readJson(req), key);
+    }
+    if (url.pathname === '/v1/chat/completions' && req.method === 'POST') {
+      const key = authenticate(state, bearer(req));
+      if (!key) return error(res, 401, 'Invalid API key', 'authentication_error');
+      return await runInference(req, res, await readJson(req), key, 'openai');
     }
     error(res, 404, 'Not found');
   } catch (e) { if (!res.headersSent) error(res, e.status || 500, e.message || 'Internal error'); else res.end(); }

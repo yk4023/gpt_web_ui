@@ -1,6 +1,6 @@
 # Codex Claude Gateway
 
-把符合条件的 ChatGPT/Codex 套餐推理能力通过本地 Anthropic Messages API 提供给 Claude Code 等应用：使用一个账号完成授权和调用，无需为这些符合条件的请求另买 OpenAI API 额度。项目提供模型别名、本地 API Key、每日请求和 token 限额、并发限制及使用记录；服务将客户端请求转换为 OpenAI Responses API 请求。
+把符合条件的 ChatGPT/Codex 套餐推理能力通过本地 **Anthropic Messages 和 OpenAI Chat Completions** 接口提供给 Claude Code 等应用：使用一个账号完成授权和调用，无需为这些符合条件的请求另买 OpenAI API 额度。项目提供模型别名、本地 API Key、每日请求和 token 限额、并发限制及使用记录；服务将客户端请求转换为 OpenAI Responses API 请求。
 
 > 这是社区项目，与 OpenAI、Anthropic 无隶属关系。
 
@@ -33,7 +33,7 @@ Get-Content '.data/admin-token'
 然后在管理页依次：
 
 1. 点击“使用 ChatGPT 登录”，在 OpenAI 官方页面选择账号并授权使用 ChatGPT 方案。授权完成后返回管理页。也可以跳过此步，改用下面的 API Key 模式。
-2. 点击“查询可用模型”，在“模型映射”中添加任意多行客户端别名与上游模型 ID，并保存。默认映射只是初始示例，不能保证账号有此模型。
+2. 点击“查询可用模型”，在“模型映射”中添加任意多行客户端别名，并从下拉列表直接选取上游模型 ID 后保存；也可手动输入。默认映射只是初始示例，不能保证账号有此模型。
 3. 创建网关调用密钥，设置每日请求、每日 token 和并发上限。密钥只显示一次。
 4. 在“接入 Claude Code”选择主模型、Haiku/Sonnet/Opus 默认模型和子代理模型，填入刚创建的密钥。复制 `env JSON` 到 Claude Code 的 `settings.json`，或切换为 PowerShell 格式并在同一终端运行 `claude`。
 
@@ -83,13 +83,24 @@ $env:CLAUDE_CODE_SUBAGENT_MODEL = 'codex-sol'
 claude
 ```
 
+OpenAI 兼容客户端使用同一枚网关 `cg_...` 密钥，Base URL 填 **`http://127.0.0.1:8765/v1`**，模型填写管理页保存的客户端别名。管理页“OpenAI 格式接入”可直接复制这组配置。例如在 PowerShell 中：
+
+```powershell
+$env:OPENAI_BASE_URL = 'http://127.0.0.1:8765/v1'
+$env:OPENAI_API_KEY = '<管理页生成的 cg_... 密钥>'
+$env:OPENAI_MODEL = 'codex-luna'
+```
+
+OpenAI 兼容范围目前是 Chat Completions 的文本、图片输入、函数工具、流式输出及模型列表；其他 OpenAI 专有接口或参数并未实现。
+
 ## 接口与数据
 
 | 接口 | 用途 |
 | --- | --- |
 | `POST /v1/messages` | Anthropic Messages 文本、图片输入、函数工具及 SSE 响应 |
+| `POST /v1/chat/completions` | OpenAI Chat Completions 文本、图片输入、函数工具及 SSE 响应 |
 | `POST /v1/messages/count_tokens` | 本地字符估算；不代表上游精确计费 |
-| `GET /v1/models` | 当前网关密钥允许的模型别名 |
+| `GET /v1/models` | 当前网关密钥允许的模型别名，OpenAI 风格列表 |
 | `GET /health` | 运行状态 |
 | `/admin/api/*` | 管理页调用，需 `X-Admin-Token` |
 
