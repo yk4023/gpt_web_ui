@@ -1,0 +1,17 @@
+{
+  "name": "codex-claude-gateway",
+  "version": "0.1.0",
+  "description": "A local Anthropic Messages to OpenAI Responses gateway with a web dashboard",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yk4023/gpt_web_ui.git"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test --test-isolation=none"
+  },
+  "engines": { "node": "^22.21.0 || >=24.5.0" }
+}

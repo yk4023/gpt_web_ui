@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7fb">
+  <title>Gateway 控制台 · Codex Claude Gateway</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div id="login" class="login-screen">
+    <div class="login-backdrop" aria-hidden="true"><div class="orb orb-one"></div><div class="orb orb-two"></div></div>
+    <div class="login-layout">
+      <div class="login-intro">
+        <div class="brand brand-light"><span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>GATEWAY<span class="brand-dot">.</span></span></div>
+        <div class="login-copy"><span class="eyebrow eyebrow-light">LOCAL MODEL GATEWAY</span><h1>让模型接入<br>简单、可控。</h1><p>在一个地方管理账号、模型映射和调用额度。为 Claude Code 与其他兼容应用提供本地接口。</p></div>
+        <div class="login-foot"><span class="live-dot"></span> 本地运行 · 仅监听 127.0.0.1</div>
+      </div>
+      <section class="login-card" aria-labelledby="login-title">
+        <div class="login-card-icon" aria-hidden="true">↗</div>
+        <span class="eyebrow">ADMIN ACCESS</span>
+        <h2 id="login-title">欢迎回来</h2>
+        <p>输入本机生成的管理员令牌，进入控制台。</p>
+        <label for="admin-token">管理员令牌</label>
+        <input id="admin-token" type="password" placeholder="admin_..." autocomplete="off" autofocus>
+        <button id="login-button" class="button button-primary button-full">进入控制台 <span aria-hidden="true">→</span></button>
+        <div id="login-error" class="form-message" role="alert"></div>
+        <div class="login-help">令牌位置 <code>.data/admin-token</code><br>仅保存在当前浏览器会话。</div>
+      </section>
+    </div>
+  </div>
+
+  <div id="dashboard" class="app-shell hidden">
+    <aside class="sidebar">
+      <a class="brand" href="#overview" aria-label="返回概览"><span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>GATEWAY<span class="brand-dot">.</span></span></a>
+      <div class="sidebar-caption">工作区</div>
+      <nav class="side-nav" aria-label="主导航">
+        <a class="nav-link active" href="#overview"><span class="nav-icon" aria-hidden="true">◫</span>概览</a>
+        <a class="nav-link" href="#connections"><span class="nav-icon" aria-hidden="true">◇</span>上游连接</a>
+        <a class="nav-link" href="#access"><span class="nav-icon" aria-hidden="true">⌘</span>API 密钥</a>
+        <a class="nav-link" href="#models"><span class="nav-icon" aria-hidden="true">▦</span>模型映射</a>
+        <a class="nav-link" href="#integration"><span class="nav-icon" aria-hidden="true">›_</span>接入指南</a>
+        <a class="nav-link" href="#activity"><span class="nav-icon" aria-hidden="true">▤</span>调用记录</a>
+      </nav>
+      <div class="sidebar-bottom"><div class="sidebar-local"><span class="live-dot"></span><div><strong>本地服务</strong><small>PRIVATE · 127.0.0.1</small></div></div><p>Codex Claude Gateway<br>管理控制台</p></div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar"><div class="breadcrumbs">工作区 <span>/</span> <strong>控制台</strong></div><div class="topbar-actions"><span id="last-updated" class="updated-at"></span><button id="refresh-button" class="icon-button" aria-label="刷新数据" title="刷新数据">↻</button><span class="avatar" aria-label="管理员">A</span></div></header>
+      <div class="page-content">
+        <section id="overview" class="hero-section">
+          <div><span class="eyebrow">OVERVIEW</span><h1>Gateway 控制台</h1><p>集中管理连接、模型和调用权限。你的本地接口已准备就绪。</p></div>
+          <span id="upstream" class="status-chip status-off"><span class="status-indicator"></span>未连接上游</span>
+        </section>
+
+        <section class="metrics" aria-label="服务概览">
+          <article class="metric-card metric-feature"><div class="metric-top"><span>Base URL</span><span class="metric-glyph">↗</span></div><strong id="base-url" class="metric-url">—</strong><button id="copy-base" class="text-button">复制地址 <span aria-hidden="true">→</span></button></article>
+          <article class="metric-card"><div class="metric-top"><span>活跃密钥</span><span class="metric-glyph">⌘</span></div><strong id="key-count">0</strong><small>已启用的调用凭据</small></article>
+          <article class="metric-card"><div class="metric-top"><span>今日请求</span><span class="metric-glyph">↗</span></div><strong id="request-count">0</strong><small>本地网关统计</small></article>
+          <article class="metric-card"><div class="metric-top"><span>今日 Token</span><span class="metric-glyph">▤</span></div><strong id="token-count">0</strong><small>输入与输出合计</small></article>
+        </section>
+
+        <section id="connections" class="section-block">
+          <div class="section-heading"><div><span class="eyebrow">01 / CONNECTION</span><h2>上游连接</h2><p>连接 ChatGPT 账号或在启动时提供 OpenAI API Key。</p></div></div>
+          <div class="connection-grid">
+            <article class="panel connection-panel"><div class="panel-head"><div class="panel-icon panel-icon-blue">◎</div><div><h3>ChatGPT 账号</h3><p id="account-status">尚未连接 ChatGPT 账号</p></div></div><div class="account-controls"><label for="account-select">已保存的账号</label><select id="account-select" aria-label="已保存的 ChatGPT 账号"></select><div class="button-row"><button id="connect-account" class="button button-primary">使用 ChatGPT 登录</button><button id="select-account" class="button button-secondary">切换账号</button><button id="reconnect-account" class="button button-secondary">重新授权</button></div></div></article>
+            <article class="panel model-discovery-panel"><div class="panel-head"><div class="panel-icon panel-icon-purple">✦</div><div><h3>可用模型</h3><p>从当前账号获取模型清单，再设置映射。</p></div></div><button id="discover-models" class="button button-outline">查询可用模型 <span aria-hidden="true">↗</span></button><div id="available-models" class="model-chips"><span class="empty-inline">连接账号后可查看可用模型</span></div><div class="panel-note">账号真实剩余额度由上游管理；本页显示网关设置的限额。</div></article>
+          </div>
+        </section>
+
+        <section id="access" class="section-block">
+          <div class="section-heading"><div><span class="eyebrow">02 / ACCESS CONTROL</span><h2>API 密钥与额度</h2><p>为每个应用创建独立密钥，按需设置调用限制。</p></div></div>
+          <div class="access-grid">
+            <article class="panel create-panel"><div class="panel-title-row"><div><h3>创建调用密钥</h3><p>生成后请立即保存，完整密钥只显示一次。</p></div><span class="panel-icon panel-icon-green">＋</span></div><div class="form-grid"><div class="field field-full"><label for="key-name">用途名称</label><input id="key-name" placeholder="例如：本机 Claude Code"></div><div class="field"><label for="max-requests">每日请求上限</label><input id="max-requests" type="number" min="0" value="100"></div><div class="field"><label for="max-tokens">每日 Token 上限</label><input id="max-tokens" type="number" min="0" value="1000000"></div><div class="field field-full"><label for="max-concurrent">并发上限</label><input id="max-concurrent" type="number" min="1" value="1"></div></div><p class="field-help">每日限额填 0 表示不限。Token 在请求完成后统计，边界处可能多出一次请求。</p><button id="create-key" class="button button-primary button-full">生成 API Key <span aria-hidden="true">→</span></button><div id="new-key-box" class="new-key-box hidden"><div class="new-key-label"><strong>新密钥</strong><span>仅显示一次</span></div><code id="new-key"></code><button id="copy-key" class="button button-secondary button-small">复制密钥</button></div></article>
+            <article class="panel keys-panel"><div class="panel-title-row"><div><h3>已创建的密钥</h3><p>管理每个应用的访问状态与额度。</p></div><span id="keys-total" class="count-badge">0 个密钥</span></div><div class="table-wrap"><table><thead><tr><th>名称 / 前缀</th><th>请求</th><th>Token</th><th>状态</th><th></th></tr></thead><tbody id="keys"></tbody></table></div></article>
+          </div>
+        </section>
+
+        <section id="models" class="section-block">
+          <div class="section-heading"><div><span class="eyebrow">03 / MODEL ROUTING</span><h2>模型映射</h2><p>将客户端使用的模型名称映射到上游模型 ID。</p></div><span id="model-count" class="count-badge">0 个映射</span></div>
+          <article class="panel mapping-panel"><div class="mapping-explain"><div class="panel-icon panel-icon-purple">⇄</div><div><h3>编辑路由规则</h3><p>左侧是客户端别名，右侧是当前账号可用的 OpenAI 模型。使用 JSON 格式保存。</p></div></div><textarea id="model-map" spellcheck="false" aria-label="模型映射 JSON"></textarea><div class="mapping-footer"><span>示例：<code>{"codex-sol":"gpt-6.1-sol"}</code></span><button id="save-models" class="button button-primary">保存映射</button></div></article>
+        </section>
+
+        <section id="integration" class="section-block">
+          <div class="section-heading"><div><span class="eyebrow">04 / INTEGRATION</span><h2>接入 Claude Code</h2><p>复制以下配置，在 PowerShell 中运行。密钥使用本页生成的值。</p></div></div>
+          <article class="terminal-panel"><div class="terminal-bar"><div class="terminal-dots"><i></i><i></i><i></i></div><span>PowerShell · Claude Code</span><button id="copy-command" class="terminal-copy">复制配置</button></div><pre id="cli-command"></pre></article><p class="integration-note">Claude Code 对非 Claude 模型网关不提供官方兼容承诺。建议先用小任务验证文本与工具调用。</p>
+        </section>
+
+        <section id="activity" class="section-block activity-section"><div class="section-heading"><div><span class="eyebrow">05 / ACTIVITY</span><h2>最近请求</h2><p>查看最近的模型调用与 Token 消耗。</p></div></div><article class="panel activity-panel"><div class="table-wrap"><table><thead><tr><th>时间</th><th>密钥</th><th>模型</th><th>状态</th><th>输入</th><th>输出</th></tr></thead><tbody id="logs"></tbody></table></div></article></section>
+        <footer class="page-footer"><span>Codex Claude Gateway</span><span>运行于本机 · 你的数据由你管理</span></footer>
+      </div>
+    </main>
+  </div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <div id="dashboard-error" class="sr-only" role="alert"></div>
+</body>
+</html>
