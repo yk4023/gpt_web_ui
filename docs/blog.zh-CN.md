@@ -1,6 +1,7 @@
 # 把 Codex 套餐能力变成本地 API：一个 ChatGPT 账号供 Claude Code 等应用使用
 
 > 项目地址：[Codex Claude Gateway · GitHub](https://github.com/yk4023/gpt_web_ui)
+>
 > 关键词：Claude Code、OpenAI、Anthropic Messages、本地网关、模型映射
 
 ## 前言：已经有 Codex 套餐，为什么还要再买一份 API 额度？
@@ -47,7 +48,14 @@ Get-Content .data/admin-token
 
 **第二步：连接套餐并配置模型。** 在页面点击“使用 ChatGPT 登录”，授权网关使用符合条件的 ChatGPT 套餐请求。接着查询当前账号可用模型，为客户端别名添加模型映射。上游模型 ID 可直接从查询结果的下拉列表选取。例如把 `codex-luna` 映射到账号实际可用的模型 ID。初始映射只是示例，请以查询结果为准。
 
-**第三步：生成调用密钥和客户端配置。** 创建一枚 `cg_...` 网关密钥，在“接入 Claude Code”选择各档位模型，复制页面生成的 `env JSON` 到 Claude Code 的 `settings.json`；也可以切换为 PowerShell 格式，在同一个终端启动 `claude`。
+**第三步：生成调用密钥并接入客户端。** 创建一枚 `cg_...` 网关密钥，在“客户端接入”选择模型。Claude Code 可复制页面生成的 `env JSON` 到 `settings.json`，也可以切换为 PowerShell 格式，在同一个终端启动 `claude`。OpenAI 格式客户端则复制同一页面的 OpenAI 配置。
+
+两种格式使用**同一枚网关密钥**，但 Base URL 不同：
+
+| 客户端 | Base URL | 模型填写什么 |
+| --- | --- | --- |
+| Claude Code / Anthropic Messages | `http://127.0.0.1:8765` | 保存的客户端别名 |
+| OpenAI Chat Completions | `http://127.0.0.1:8765/v1` | 同一个客户端别名 |
 
 配置的核心结构如下，密钥和模型名请以你自己的管理页为准：
 
@@ -68,7 +76,15 @@ Get-Content .data/admin-token
 
 如果已有 `settings.json`，请把生成的 `env` 字段合并进去。上下文数值可以编辑，但它不会增加上游模型的真实容量。
 
-其他支持 OpenAI Chat Completions 的应用可填入 `http://127.0.0.1:8765/v1` 作为 Base URL，API Key 使用同一枚网关 `cg_...` 密钥，模型填写保存过的别名。管理页可一键复制对应环境变量。这里的 OpenAI 兼容指 Chat Completions 和模型列表，并非所有 OpenAI 专有接口。
+其他支持 OpenAI Chat Completions 的应用可以直接使用下面这组参数，管理页也提供一键复制：
+
+```powershell
+$env:OPENAI_BASE_URL = 'http://127.0.0.1:8765/v1'
+$env:OPENAI_API_KEY = '<管理页生成的 cg_... 密钥>'
+$env:OPENAI_MODEL = 'codex-luna'
+```
+
+这里的 OpenAI 兼容指 `/v1/chat/completions` 和 `/v1/models`，并非所有 OpenAI 专有接口。上面示例中的 `codex-luna` 需要先在模型映射中保存。
 
 ## 使用趋势到底统计了什么？
 

@@ -4,19 +4,9 @@
 
 > 这是社区项目，与 OpenAI、Anthropic 无隶属关系。
 
-## 先了解接入边界
+## 快速安装（Windows PowerShell）
 
-- **它不读取、控制或复用 Codex 桌面窗口中的对话与登录态。** Codex 桌面窗口没有公开的 Anthropic Messages 服务器接口。本项目通过 OpenAI 官方 Responses API 完成推理。
-- 可在管理页完成独立的 **Sign in with ChatGPT** 授权。授权成功且账号、模型和请求符合条件时，本地应用可共用该账号的 ChatGPT 套餐用量，无需另行提供 OpenAI API Key；这不会生成额外额度。也可在启动前设置独立的 `OPENAI_API_KEY`；这时按 OpenAI API 计费，并优先使用该密钥。
-- 管理页会计算每枚网关密钥的今日剩余请求和 Token；这只是**网关自行设置的用量限制**。当前授权没有可读取 ChatGPT/Codex 账号真实剩余额度的接口，页面提供 [ChatGPT 官方用量入口](https://chatgpt.com/settings/usage)。每日 token 限额在响应完成后累计，边界处可能多消耗一次请求。
-- “使用趋势”图表可切换每日（近 14 日）、每周（近 12 周）、每月（近 12 月），分别查看请求数或输入与输出 Token 合计。历史汇总保存在本机 `.data/state.json`，保留约 400 天；从旧版本升级时只能继承当天密钥累计总数，无法还原此前被清理的请求记录。统计按 `GATEWAY_TIMEZONE`（默认 `Asia/Shanghai`）划分日期。
-- Claude Code 官方文档允许配置 Anthropic Messages 网关，但不保证通过网关使用非 Claude 模型。这个转换器覆盖常用文本、图片输入、工具调用与流式事件；Claude 专有能力未全部实现。请先用小任务验证自己的 Claude Code 版本。
-
-## 运行环境
-
-Node.js 24.5+ 或 22.21+。项目只使用 Node 标准库，不需要安装 npm 依赖。
-
-在 PowerShell 中：
+**1. 准备环境并启动。** 安装 Node.js 24.5+ 或 22.21+；本项目无需执行 `npm install`。在 PowerShell 中运行：
 
 ```powershell
 git clone https://github.com/yk4023/gpt_web_ui.git
@@ -24,34 +14,46 @@ cd gpt_web_ui
 npm start
 ```
 
-默认管理页与 Base URL：`http://127.0.0.1:8765`。服务只监听本机回环地址。首次启动会生成 `.data/admin-token`；在 PowerShell 中运行以下命令，复制令牌并在管理页登录：
+**2. 打开管理页。** 浏览器访问 `http://127.0.0.1:8765`。首次启动会生成管理员令牌；另开一个 PowerShell 窗口，在项目目录运行下面的命令，复制结果并登录：
 
 ```powershell
 Get-Content '.data/admin-token'
 ```
 
-然后在管理页依次：
+**3. 连接账号并创建网关密钥。** 在管理页依次操作：
 
-1. 点击“使用 ChatGPT 登录”，在 OpenAI 官方页面选择账号并授权使用 ChatGPT 方案。授权完成后返回管理页。也可以跳过此步，改用下面的 API Key 模式。
-2. 点击“查询可用模型”，在“模型映射”中添加任意多行客户端别名，并从下拉列表直接选取上游模型 ID 后保存；也可手动输入。默认映射只是初始示例，不能保证账号有此模型。
-3. 创建网关调用密钥，设置每日请求、每日 token 和并发上限。密钥只显示一次。
-4. 在“接入 Claude Code”选择主模型、Haiku/Sonnet/Opus 默认模型和子代理模型，填入刚创建的密钥。复制 `env JSON` 到 Claude Code 的 `settings.json`，或切换为 PowerShell 格式并在同一终端运行 `claude`。
+1. 点击“使用 ChatGPT 登录”完成独立授权。
+2. 点击“查询可用模型”，在“模型映射”中设置客户端别名，从下拉列表选择上游模型 ID，然后保存。
+3. 创建网关 API Key，设置限额，并立即保存完整的 `cg_...` 密钥；页面只显示一次。
 
-API Key 上游模式：在启动网关的终端先设置 `OPENAI_API_KEY`，然后运行 `npm start`。不要把上游密钥填入 Claude Code；Claude Code 只使用网关生成的 `cg_...` 密钥。
+**4. 接入客户端。** 在“客户端接入”中填入网关密钥和模型，复制 Claude Code 或 OpenAI 格式配置。两个接口共用同一套模型映射和网关密钥：
+
+| 客户端格式 | Base URL | API Key |
+| --- | --- | --- |
+| Claude Code / Anthropic Messages | `http://127.0.0.1:8765` | 管理页生成的 `cg_...` |
+| OpenAI Chat Completions | `http://127.0.0.1:8765/v1` | 同一枚 `cg_...` |
+
+模型填写“模型映射”中保存的**客户端别名**，不要填写上游模型 ID。默认映射仅是示例，需按账号实际可用模型调整。
+
+## 可选：使用 OpenAI API Key 或本机代理
+
+如果不用 ChatGPT 套餐授权，可在**启动网关的终端**先设置 `OPENAI_API_KEY`，然后运行 `npm start`。这种模式按 OpenAI API 计费；客户端仍只使用网关生成的 `cg_...` 密钥。设置该环境变量后，网关会优先使用它。
 
 ```powershell
 $env:OPENAI_API_KEY = '<你的 OpenAI API Key>'
 npm start
 ```
 
-本机需要通过代理访问上游时，可复制 [`config/network.example.json`](config/network.example.json) 到 `.data/network.json` 并修改地址，或在启动前设置 `GATEWAY_PROXY_URL`（环境变量优先）。代理只接受本机 HTTP/HTTPS 地址；授权、模型查询和推理请求都会使用它，本地管理页和 Claude Code 到网关的连接仍走回环地址。请只在符合 OpenAI 服务地区与网络政策的环境中使用。
+本机需要通过代理访问上游时，可复制 [`config/network.example.json`](config/network.example.json) 到 `.data/network.json` 并修改地址，或在启动前设置 `GATEWAY_PROXY_URL`（环境变量优先）。代理只接受本机 HTTP/HTTPS 地址；授权、模型查询和推理会使用它。代理不会改变 OpenAI 服务地区要求。
 
 ```powershell
 New-Item -ItemType Directory -Force .data | Out-Null
 Copy-Item config/network.example.json .data/network.json
 ```
 
-Claude Code `settings.json` 示例（管理页按所选模型自动生成）：
+## 配置示例
+
+Claude Code `settings.json` 示例（推荐直接复制管理页生成的配置）：
 
 ```json
 {
@@ -92,6 +94,13 @@ $env:OPENAI_MODEL = 'codex-luna'
 ```
 
 OpenAI 兼容范围目前是 Chat Completions 的文本、图片输入、函数工具、流式输出及模型列表；其他 OpenAI 专有接口或参数并未实现。
+
+## 使用边界
+
+- 网关**不会读取或控制 Codex 桌面窗口**。它通过独立的 Sign in with ChatGPT 授权调用符合条件的 OpenAI Responses API 请求。套餐资格、模型权限和共享额度仍由 OpenAI 决定；网关不会生成额外额度。
+- 管理页显示的剩余请求数、Token 数以及日/周/月图表是**本地网关统计**，不代表 ChatGPT 账号的真实余额。账号用量请到 [ChatGPT 官方用量页](https://chatgpt.com/settings/usage)查看。每日 Token 限额在响应完成后累计，边界处可能多出一次请求。
+- 图表保存约 400 天的每日汇总，按 `GATEWAY_TIMEZONE`（默认 `Asia/Shanghai`）划分日期。旧版本升级当天可继承密钥累计总数，更早的历史无法补齐。
+- Claude Code 对非 Claude 模型网关没有官方兼容承诺。项目覆盖常见文本、图片输入、工具调用和流式输出；请先用小任务验证所用客户端版本。
 
 ## 接口与数据
 
