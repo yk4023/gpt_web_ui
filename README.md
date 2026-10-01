@@ -108,7 +108,7 @@ node scripts/claude-smoke.mjs
 
 测试使用本地模拟上游，覆盖 Messages 转换、工具调用流式事件、配额、管理员创建密钥、OAuth 令牌校验与刷新。第二条命令还会调用本机已安装的 Claude Code CLI，检查一次读取文件的工具调用与结果回传；不使用 OpenAI/ChatGPT 额度。真实账号推理仍需完成登录后验证。
 
-详细背景、使用步骤和注意事项见[项目博客](docs/blog.zh-CN.md)。提交改进前请阅读[贡献指南](CONTRIBUTING.md)。
+提交改进前请阅读[贡献指南](CONTRIBUTING.md)。
 
 ## 设计依据
 
